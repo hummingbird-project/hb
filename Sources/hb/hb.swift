@@ -78,9 +78,18 @@ struct InitCommand: AsyncParsableCommand {
         try generateAppRequestContextsSwift(features: choices)
             .write(toFile: "Sources/AppRequestContexts.swift", atomically: true, encoding: .utf8)
 
-        if choices.contains(.jwt) {
+        try generateAddRoutesSwift(features: choices)
+            .write(toFile: "Sources/Routes.swift", atomically: true, encoding: .utf8)
+
+        if choices.contains(.login) {
             try generateJWT(name: name)
                 .write(toFile: "Sources/JWT.swift", atomically: true, encoding: .utf8)
+        }
+
+        let models = generateModelsSwift(features: choices)
+        for (fileName, contents) in models {
+            try contents
+            .write(toFile: "Sources/\(fileName)", atomically: true, encoding: .utf8)
         }
     }
 }
@@ -108,20 +117,53 @@ func generateEntryPoint(
     """
 }
 
+func featureAppRequestContextProperties(
+    features: [TemplateFeature]
+) -> [String: String] {
+    var properties = [String: String]()
+
+    for feature in features {
+        switch feature {
+        case .login:
+            properties["identity"] = "User?"
+        case .otel, .websocket:
+            continue
+        }
+    }
+
+    return properties
+}
+
 func generateAppRequestContextsSwift(
     features: [TemplateFeature]
 ) -> String {
+    let properties = featureAppRequestContextProperties(features: features)
+
+    let variableDeclarations = properties.map { key, value in
+        "        var \(key): \(value)"
+    }.joined(separator: "\n")
+    let setup = properties.map { key, value in
+        "        self.\(key) = nil"
+    }.joined(separator: "\n")
+
+    var conformances = ["RequestContext"]
+    if features.contains(.login) {
+        conformances.append("AuthRequestContext")
+    }
+
     return """
     import Hummingbird
     import HummingbirdCore
     import Logging
     \(generateImports(features: features))
 
-    struct AppRequestContext: RequestContext {
+    struct AppRequestContext: \(conformances.joined(separator: ", ")) {
         var coreContext: CoreRequestContextStorage
+    \(variableDeclarations)
         
         init(source: ApplicationRequestContextSource) {
             self.coreContext = .init(source: source)
+    \(setup)
         }
     }
 
@@ -129,22 +171,109 @@ func generateAppRequestContextsSwift(
     """
 }
 
+func generateModelsSwift(
+    features: [TemplateFeature]
+) -> [String: String] {
+    let userModel = """
+    #if canImport(FoundationEssentials)
+    import FoundationEssentials
+    #else
+    import Foundation
+    #endif
+
+    struct User: Codable {
+        let id: UUID
+        var username: String
+        var password: String
+    }
+    """
+
+    return [
+        "User.swift": userModel,
+    ]
+}
+
 func generateWebSocketAppRequestContextSwift(
     features: [TemplateFeature]
 ) -> String {
+    let properties = featureAppRequestContextProperties(features: features)
+
+    let variableDeclarations = properties.map { key, value in
+        "    var \(key): \(value)"
+    }.joined(separator: "\n")
+    let setup = properties.map { key, value in
+        "        self.\(key) = nil"
+    }.joined(separator: "\n")
+
+    var conformances = ["RequestContext"]
+    if features.contains(.login) {
+        conformances.append("AuthRequestContext")
+    }
+
     return """
-    struct WebSocketAppRequestContext: WebSocketRequestContext, RequestContext {
+    struct WebSocketAppRequestContext: WebSocketRequestContext, \(conformances.joined(separator: ", ")) {
         var coreContext: CoreRequestContextStorage
         let webSocket: WebSocketHandlerReference<Self>
         let logger = Logger(label: "websocket")
+    \(variableDeclarations)
 
         init(source: ApplicationRequestContextSource) {
             self.coreContext = .init(source: source)
             self.webSocket = .init()
+    \(setup)
         }
     }
     """
 }
+
+func generateAddRoutesSwift(
+    features: [TemplateFeature]
+) -> String {
+    let loginContext = """
+    struct AppAuthRequestContext: ChildRequestContext {
+        var coreContext: CoreRequestContextStorage
+        let user: User
+
+        init(context: AppRequestContext) throws {
+            self.coreContext = context.coreContext
+            self.user = try context.requireIdentity()
+        }
+    }
+    """
+    
+    let jwtSetup = """
+        let keys = JWTKeyCollection()
+        #if DEBUG
+        await keys.add(
+            hmac: HMACKey(from: config.string(forKey: "jwt.secret", default: "<replace-in-production>")),
+            digestAlgorithm: .sha256
+        )
+        #else
+        try await keys.add(
+            hmac: HMACKey(from: config.requiredString(forKey: "jwt.secret")),
+            digestAlgorithm: .sha256
+        )
+        #endif
+    """
+    
+    return """
+    import Configuration
+    import Hummingbird
+    import Logging
+    \(generateImports(features: features))
+
+    \(features.contains(.login) ? loginContext : "")
+    
+    func addRoutes(
+        _ router: Router<AppRequestContext>
+    ) async throws {
+        \(features.contains(.login) ? jwtSetup : "")
+        // TODO: Add routes
+    }
+    """
+}
+
+
 func generateBuildApplicationSwift(
     name: String,
     features: [TemplateFeature]
@@ -164,24 +293,6 @@ func generateBuildApplicationSwift(
 
     func buildServices() async throws -> [any Service] {
     \(generateServices(features: features))
-    }
-
-    func addRoutes(
-        _ router: Router<AppRequestContext>
-    ) async throws {
-        let keys = JWTKeyCollection()
-        #if DEBUG
-        await keys.add(
-            hmac: HMACKey(from: config.string(forKey: "jwt.secret", default: "<replace-in-production>")),
-            digestAlgorithm: .sha256
-        )
-        #else
-        try await keys.add(
-            hmac: HMACKey(from: config.requiredString(forKey: "jwt.secret")),
-            digestAlgorithm: .sha256
-        )
-        #endif
-        // TODO: Add routes
     }
 
     func buildApplication() async throws -> some ApplicationProtocol {
@@ -242,7 +353,7 @@ func generateServices(
 
     for feature in features {
         switch feature {
-        case .websocket, .jwt:
+        case .websocket, .login:
             continue
         case .otel:
             services.append("""
@@ -345,7 +456,7 @@ func generateImports(features: [TemplateFeature]) -> String {
 enum TemplateFeature: String, CaseIterable, CustomStringConvertible {
     case websocket = "WebSocket Server"
     case otel = "Open Telemetry"
-    case jwt = "JSON Web Token"
+    case login = "Login System"
 
     var description: String { rawValue }
     init?(description: String) {
@@ -365,9 +476,12 @@ enum TemplateFeature: String, CaseIterable, CustomStringConvertible {
             return [
                 "OTel",
             ]
-        case .jwt:
+        case .login:
             return [
                 "JWTKit",
+                "HummingbirdAuth",
+                "HummingbirdBcrypt",
+                "HummingbirdOTP",
             ]
         }
     }
@@ -382,9 +496,12 @@ enum TemplateFeature: String, CaseIterable, CustomStringConvertible {
             return [
                 "OTel": "swift-otel",
             ]
-        case .jwt:
+        case .login:
             return [
                 "JWTKit": "jwt-kit",
+                "HummingbirdAuth": "hummingbird-auth",
+                "HummingbirdBcrypt": "hummingbird-auth",
+                "HummingbirdOTP": "hummingbird-auth",
             ]
         }
     }
@@ -399,9 +516,10 @@ enum TemplateFeature: String, CaseIterable, CustomStringConvertible {
             return [
                 "https://github.com/swift-otel/swift-otel.git": "1.0.0",
             ]
-        case .jwt:
+        case .login:
             return [
                 "https://github.com/vapor/jwt-kit.git": "5.2.0",
+                "https://github.com/hummingbird-project/hummingbird-auth.git": "2.0.2",
             ]
         }
     }
