@@ -1,5 +1,5 @@
 {
-  "originHash" : "966f311b3a30c5b4b208f4d8ae158ee2bfa943cfd09c9de7ead636976ec367a8",
+  "originHash" : "d7839d87ae408687d36b13b9920066174f0246eee3b94c862020fa409165b9f6",
   "pins" : [
     {
       "identity" : "noora",
@@ -44,6 +44,42 @@
       "state" : {
         "revision" : "ce592ae52f982c847a4efc0dd881cc9eb32d29f2",
         "version" : "1.6.4"
+      }
+    },
+    {
+      "identity" : "swift-mustache",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/hummingbird-project/swift-mustache.git",
+      "state" : {
+        "revision" : "534f9f9e60ccc1ecc947cababb71c5f91497f4a2",
+        "version" : "2.0.1"
+      }
+    },
+    {
+      "identity" : "swift-subprocess",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/swiftlang/swift-subprocess",
+      "state" : {
+        "revision" : "d781b8f079f3747f970bef3e4aadece29d4d0385",
+        "version" : "0.2.0"
+      }
+    },
+    {
+      "identity" : "swift-system",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/apple/swift-system",
+      "state" : {
+        "revision" : "395a77f0aa927f0ff73941d7ac35f2b46d47c9db",
+        "version" : "1.6.3"
+      }
+    },
+    {
+      "identity" : "swift-zip-archive",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/adam-fowler/swift-zip-archive.git",
+      "state" : {
+        "revision" : "b04d3d130b9a8b212db9d97da3b8853b024887be",
+        "version" : "0.6.4"
       }
     }
   ],
