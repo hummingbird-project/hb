@@ -1,9 +1,3 @@
-// The Swift Programming Language
-// https://docs.swift.org/swift-book
-// 
-// Swift Argument Parser
-// https://swiftpackageindex.com/apple/swift-argument-parser/documentation
-
 import ArgumentParser
 import Noora
 import Foundation
@@ -42,7 +36,10 @@ struct InitCommand: AsyncParsableCommand {
     )
 
     func run() async throws {
-        let name = Noora().textPrompt(
+        let path = URL(string: FileManager.default.currentDirectoryPath)!.appending(path: "example")
+        print("Outputting to: \(path.path())")
+
+        var name = Noora().textPrompt(
             title: TerminalText("What project name would you like to use?"),
             prompt: TerminalText("App Name: "),
             description: TerminalText("The name of the project you want to create."),
@@ -52,15 +49,14 @@ struct InitCommand: AsyncParsableCommand {
                 AsciiValidationRule(error: "App name cannot contain non-ASCII characters."),
             ]
         )
+        let firstLetter = name[name.startIndex].uppercased()
+        name = firstLetter + name.dropFirst()
 
         let choices = Noora().multipleChoicePrompt(
             question: TerminalText("Which features would you like to enable?"),
             options: TemplateFeature.allCases,
         )
 
-        // let path = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
-        let path = URL(string: FileManager.default.currentDirectoryPath)!.appending(path: "example")
-        print("Outputting to: \(path.path())")
         try FileManager.default.createDirectory(atPath: path.path(), withIntermediateDirectories: true, attributes: nil)
         try FileManager.default.createDirectory(atPath: path.appending(path: "Sources").path(), withIntermediateDirectories: true, attributes: nil)
 
@@ -75,7 +71,7 @@ struct InitCommand: AsyncParsableCommand {
         try generateBuildApplicationSwift(name: name, features: choices)
             .write(toFile: "Sources/Application.swift", atomically: true, encoding: .utf8)
 
-        try generateAppRequestContextsSwift(features: choices)
+        try generateAppRequestContextsSwift(name: name, features: choices)
             .write(toFile: "Sources/AppRequestContexts.swift", atomically: true, encoding: .utf8)
 
         try generateAddRoutesSwift(features: choices)
@@ -118,6 +114,7 @@ func generateEntryPoint(
 }
 
 func featureAppRequestContextProperties(
+    name: String,
     features: [TemplateFeature]
 ) -> [String: String] {
     var properties = [String: String]()
@@ -126,6 +123,7 @@ func featureAppRequestContextProperties(
         switch feature {
         case .login:
             properties["identity"] = "User?"
+            properties["token"] = "\(name)Payload?"
         case .otel, .websocket:
             continue
         }
@@ -135,12 +133,16 @@ func featureAppRequestContextProperties(
 }
 
 func generateAppRequestContextsSwift(
+    name: String,
     features: [TemplateFeature]
 ) -> String {
-    let properties = featureAppRequestContextProperties(features: features)
+    let properties = featureAppRequestContextProperties(
+        name: name,
+        features: features
+    )
 
     let variableDeclarations = properties.map { key, value in
-        "        var \(key): \(value)"
+        "    var \(key): \(value)"
     }.joined(separator: "\n")
     let setup = properties.map { key, value in
         "        self.\(key) = nil"
@@ -167,7 +169,7 @@ func generateAppRequestContextsSwift(
         }
     }
 
-    \(generateWebSocketAppRequestContextSwift(features: features))
+    \(generateWebSocketAppRequestContextSwift(name: name, features: features))
     """
 }
 
@@ -194,9 +196,13 @@ func generateModelsSwift(
 }
 
 func generateWebSocketAppRequestContextSwift(
+    name: String,
     features: [TemplateFeature]
 ) -> String {
-    let properties = featureAppRequestContextProperties(features: features)
+    let properties = featureAppRequestContextProperties(
+        name: name,
+        features: features
+    )
 
     let variableDeclarations = properties.map { key, value in
         "    var \(key): \(value)"
@@ -240,20 +246,32 @@ func generateAddRoutesSwift(
         }
     }
     """
-    
-    let jwtSetup = """
-        let keys = JWTKeyCollection()
-        #if DEBUG
-        await keys.add(
-            hmac: HMACKey(from: config.string(forKey: "jwt.secret", default: "<replace-in-production>")),
-            digestAlgorithm: .sha256
-        )
-        #else
-        try await keys.add(
-            hmac: HMACKey(from: config.requiredString(forKey: "jwt.secret")),
-            digestAlgorithm: .sha256
-        )
-        #endif
+
+    let loginRoutes = """
+        let authenticated = unauthenticated
+            .add(middleware: try await JWTMiddleware())
+            .group(context: AppAuthRequestContext.self)
+    """
+
+    let webSocketRoutes = """
+    func addWebSocketRoutes(
+        _ wsRouter: Router<WebSocketAppRequestContext>
+    ) {
+        wsRouter.ws { inbound, outbound, context in
+            // Example: Echo the input back   
+            for try await message in inbound {
+                switch message.opcode {
+                case .text:
+                    let string = String(buffer: message.data)
+                    try await outbound.write(.text(string))
+                case .binary:
+                    try await outbound.write(.binary(message.data))
+                case .continuation:
+                    try await outbound.write(.binary(message.data))
+                }
+            }
+        }
+    }
     """
     
     return """
@@ -265,11 +283,14 @@ func generateAddRoutesSwift(
     \(features.contains(.login) ? loginContext : "")
     
     func addRoutes(
-        _ router: Router<AppRequestContext>
+        _ routes: Router<AppRequestContext>
     ) async throws {
-        \(features.contains(.login) ? jwtSetup : "")
+        let unauthenticated = routes.group("/api/v1")
+    \(features.contains(.login) ? loginRoutes : "")
         // TODO: Add routes
     }
+
+    \(features.contains(.websocket) ? webSocketRoutes : "")
     """
 }
 
@@ -292,7 +313,7 @@ func generateBuildApplicationSwift(
     ])
 
     func buildServices() async throws -> [any Service] {
-    \(generateServices(features: features))
+    \(generateServices(name: name, features: features))
     }
 
     func buildApplication() async throws -> some ApplicationProtocol {
@@ -332,6 +353,7 @@ func generateBuildApplicationSwift(
 func generateJWT(name: String) -> String {
     return """
     import JWTKit
+    import Hummingbird
 
     struct \(name)Payload: JWTPayload {
         var sub: SubjectClaim
@@ -341,10 +363,44 @@ func generateJWT(name: String) -> String {
             try self.exp.verifyNotExpired()
         }
     }
+
+    struct JWTMiddleware: RouterMiddleware {
+        typealias Context = AppRequestContext
+        let keys = JWTKeyCollection()
+        
+        init() async throws {
+            #if DEBUG
+            await keys.add(
+                hmac: HMACKey(from: config.string(forKey: "jwt.secret", default: "<replace-in-production>")),
+                digestAlgorithm: .sha256
+            )
+            #else
+            try await keys.add(
+                hmac: HMACKey(from: config.requiredString(forKey: "jwt.secret")),
+                digestAlgorithm: .sha256
+            )
+            #endif
+        }
+
+        func handle(
+            _ request: Request,
+            context: AppRequestContext,
+            next: (Request, AppRequestContext) async throws -> Response
+        ) async throws -> Response {
+            var context = context
+            if let token = request.headers.bearer?.token {
+                let jwt = try await keys.verify(token, as: \(name)Payload.self)
+                context.token = jwt
+            }
+            
+            return try await next(request, context)
+        }
+    }
     """
 }
 
 func generateServices(
+    name: String,
     features: [TemplateFeature]
 ) -> String {
     var services = """
@@ -353,13 +409,13 @@ func generateServices(
 
     for feature in features {
         switch feature {
-        case .websocket, .login:
+        case .websocket, .login, .lambda:
             continue
         case .otel:
             services.append("""
             
                 var otelConfig = OTel.Configuration.default
-                otelConfig.serviceName = "Hummingbird"
+                otelConfig.serviceName = "\(name) Server"
                 // To get started, we'll use the console exporter so you can see your logs in the terminal
                 // Remove this in production, and set up Open Telemetry to send your logs to a real collector
                 otelConfig.logs.exporter = .console
@@ -380,7 +436,7 @@ func generateServerImplementation(
     if features.contains(.websocket) {
         return """
             let wsRouter = Router(context: WebSocketAppRequestContext.self)
-            // TODO: Add websocket routes
+            addWebSocketRoutes(wsRouter)
 
             let server = HTTPServerBuilder.http1WebSocketUpgrade(
                 webSocketRouter: wsRouter
@@ -456,7 +512,8 @@ func generateImports(features: [TemplateFeature]) -> String {
 enum TemplateFeature: String, CaseIterable, CustomStringConvertible {
     case websocket = "WebSocket Server"
     case otel = "Open Telemetry"
-    case login = "Login System"
+    case login = "Login Flow"
+    case lambda = "AWS Lambda"
 
     var description: String { rawValue }
     init?(description: String) {
@@ -483,6 +540,10 @@ enum TemplateFeature: String, CaseIterable, CustomStringConvertible {
                 "HummingbirdBcrypt",
                 "HummingbirdOTP",
             ]
+        case .lambda:
+            return [
+                "HummingbirdLambda",
+            ]
         }
     }
 
@@ -503,6 +564,10 @@ enum TemplateFeature: String, CaseIterable, CustomStringConvertible {
                 "HummingbirdBcrypt": "hummingbird-auth",
                 "HummingbirdOTP": "hummingbird-auth",
             ]
+        case .lambda:
+            return [
+                "HummingbirdLambda": "hummingbird-lambda",
+            ]
         }
     }
 
@@ -520,6 +585,10 @@ enum TemplateFeature: String, CaseIterable, CustomStringConvertible {
             return [
                 "https://github.com/vapor/jwt-kit.git": "5.2.0",
                 "https://github.com/hummingbird-project/hummingbird-auth.git": "2.0.2",
+            ]
+        case .lambda:
+            return [
+                "https://github.com/hummingbird-project/hummingbird-lambda.git": "2.0.0",
             ]
         }
     }
