@@ -1,10 +1,13 @@
 import ArgumentParser
-import Noora
 import Foundation
+import Noora
+#if canImport(CoreServices)
+import CoreServices
+#endif
 
 struct NoWhitespaceValidationRule: ValidatableRule {
     let error: any ValidatableError
-    
+
     func validate(input: String) -> Bool {
         return !input.contains(where: \.isWhitespace)
     }
@@ -12,7 +15,7 @@ struct NoWhitespaceValidationRule: ValidatableRule {
 
 struct AsciiValidationRule: ValidatableRule {
     let error: any ValidatableError
-    
+
     func validate(input: String) -> Bool {
         return !input.contains(where: { !$0.isASCII })
     }
@@ -21,18 +24,21 @@ struct AsciiValidationRule: ValidatableRule {
 @main
 struct HB: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
-        abstract: "HB is a tool for managing your hummingbird server.",
+        abstract: "HB is a tool for managing your Hummingbird server.",
         version: "1.0.0",
         subcommands: [
             InitCommand.self,
+            RunCommand.self,
         ]
     )
 }
 
+// MARK: - Init
+
 struct InitCommand: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "init",
-        abstract: "Initialize the hummingbird server."
+        abstract: "Scaffold a new Hummingbird project."
     )
 
     func run() async throws {
@@ -85,10 +91,230 @@ struct InitCommand: AsyncParsableCommand {
         let models = generateModelsSwift(features: choices)
         for (fileName, contents) in models {
             try contents
-            .write(toFile: "Sources/\(fileName)", atomically: true, encoding: .utf8)
+                .write(toFile: "Sources/\(fileName)", atomically: true, encoding: .utf8)
         }
     }
 }
+
+// MARK: - Run
+
+struct RunCommand: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "run",
+        abstract: "Watch for Swift file changes and rebuild + restart the server."
+    )
+
+    func run() async throws {
+        let cwd = FileManager.default.currentDirectoryPath
+        let runner = ProcessRunner(directory: cwd)
+
+        let signalSource = DispatchSource.makeSignalSource(signal: SIGINT, queue: .main)
+        signal(SIGINT, SIG_IGN)
+        signalSource.setEventHandler {
+            Task {
+                await runner.terminate()
+                Darwin.exit(0)
+            }
+        }
+        signalSource.resume()
+
+        await runner.start()
+
+        let watcher = SwiftFileWatcher(path: cwd) {
+            Task { await runner.scheduleRestart() }
+        }
+        watcher.start()
+
+        // Suspend until the signal handler calls exit().
+        await withUnsafeContinuation { (_: UnsafeContinuation<Void, Never>) in }
+    }
+}
+
+actor ProcessRunner {
+    private let directory: String
+    private var process: Process?
+    private var pendingRestart: Task<Void, Never>?
+
+    init(directory: String) {
+        self.directory = directory
+    }
+
+    func start() async {
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/usr/bin/swift")
+        proc.arguments = ["run"]
+        proc.currentDirectoryURL = URL(fileURLWithPath: directory)
+        do {
+            try proc.run()
+        } catch {
+            fputs("hb: failed to launch swift run: \(error)\n", stderr)
+            return
+        }
+        process = proc
+    }
+
+    func scheduleRestart() {
+        pendingRestart?.cancel()
+        pendingRestart = Task {
+            try? await Task.sleep(for: .milliseconds(500))
+            guard !Task.isCancelled else { return }
+            await restart()
+        }
+    }
+
+    private func restart() async {
+        if let proc = process {
+            process = nil
+            proc.terminate()
+            proc.waitUntilExit()
+        }
+        await start()
+    }
+
+    // Signal the process and return immediately; used by the SIGINT handler.
+    func terminate() {
+        pendingRestart?.cancel()
+        process?.terminate()
+        process = nil
+    }
+}
+
+final class SwiftFileWatcher: @unchecked Sendable {
+    private let path: String
+    private let onChange: @Sendable () -> Void
+
+    #if canImport(CoreServices)
+    private var stream: FSEventStreamRef?
+    #else
+    private var timer: DispatchSourceTimer?
+    private var knownMtimes: [String: Date] = [:]
+    #endif
+
+    init(path: String, onChange: @escaping @Sendable () -> Void) {
+        self.path = path
+        self.onChange = onChange
+    }
+
+    func start() {
+        #if canImport(CoreServices)
+        startFSEvents()
+        #else
+        startPolling()
+        #endif
+    }
+
+    func stop() {
+        #if canImport(CoreServices)
+        stopFSEvents()
+        #else
+        stopPolling()
+        #endif
+    }
+
+    func notify() {
+        onChange()
+    }
+
+    #if canImport(CoreServices)
+    private func startFSEvents() {
+        let selfPtr = Unmanaged.passUnretained(self).toOpaque()
+        var context = FSEventStreamContext(
+            version: 0,
+            info: selfPtr,
+            retain: nil,
+            release: nil,
+            copyDescription: nil
+        )
+        let flags = UInt32(kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagUseCFTypes)
+        guard let stream = FSEventStreamCreate(
+            kCFAllocatorDefault,
+            fsEventsCallback,
+            &context,
+            [path] as CFArray,
+            FSEventStreamEventId(kFSEventStreamEventIdSinceNow),
+            0.3,
+            flags
+        ) else { return }
+        self.stream = stream
+
+        let queue = DispatchQueue(label: "hb.fswatcher", qos: .utility)
+        FSEventStreamSetDispatchQueue(stream, queue)
+        FSEventStreamStart(stream)
+    }
+
+    private func stopFSEvents() {
+        if let stream {
+            FSEventStreamStop(stream)
+            FSEventStreamInvalidate(stream)
+            FSEventStreamRelease(stream)
+            self.stream = nil
+        }
+    }
+    #else
+    private func startPolling() {
+        knownMtimes = swiftFileMtimes(under: path)
+        let timer = DispatchSource.makeTimerSource(queue: DispatchQueue(label: "hb.fswatcher", qos: .utility))
+        self.timer = timer
+        timer.schedule(deadline: .now() + 1, repeating: 1.0)
+        timer.setEventHandler { [weak self] in
+            guard let self else { return }
+            let current = swiftFileMtimes(under: self.path)
+            if current != self.knownMtimes {
+                self.knownMtimes = current
+                self.onChange()
+            }
+        }
+        timer.resume()
+    }
+
+    private func stopPolling() {
+        timer?.cancel()
+        timer = nil
+    }
+    #endif
+}
+
+#if canImport(CoreServices)
+private func fsEventsCallback(
+    _: ConstFSEventStreamRef,
+    _ clientCallBackInfo: UnsafeMutableRawPointer?,
+    _ numEvents: Int,
+    _ eventPaths: UnsafeMutableRawPointer,
+    _: UnsafePointer<FSEventStreamEventFlags>,
+    _: UnsafePointer<FSEventStreamEventId>
+) {
+    guard let info = clientCallBackInfo else { return }
+    let watcher = Unmanaged<SwiftFileWatcher>.fromOpaque(info).takeUnretainedValue()
+    let paths = Unmanaged<CFArray>.fromOpaque(eventPaths).takeUnretainedValue() as NSArray
+    for i in 0..<numEvents {
+        guard let path = paths[i] as? String else { continue }
+        guard !path.contains("/.build/"), !path.contains("/.git/") else { continue }
+        if path.hasSuffix(".swift") {
+            watcher.notify()
+            return
+        }
+    }
+}
+#else
+private func swiftFileMtimes(under root: String) -> [String: Date] {
+    var result = [String: Date]()
+    guard let enumerator = FileManager.default.enumerator(
+        at: URL(fileURLWithPath: root),
+        includingPropertiesForKeys: [.contentModificationDateKey]
+    ) else { return result }
+    for case let url as URL in enumerator {
+        let p = url.path
+        guard !p.contains("/.build/"), !p.contains("/.git/") else { continue }
+        guard url.pathExtension == "swift" else { continue }
+        if let mtime = try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate {
+            result[p] = mtime
+        }
+    }
+    return result
+}
+#endif
+
+// MARK: - Code generation
 
 func generateEntryPoint(
     name: String,
@@ -124,7 +350,7 @@ func featureAppRequestContextProperties(
         case .login:
             properties["identity"] = "User?"
             properties["token"] = "\(name)Payload?"
-        case .otel, .websocket:
+        case .otel, .websocket, .lambda:
             continue
         }
     }
@@ -144,7 +370,7 @@ func generateAppRequestContextsSwift(
     let variableDeclarations = properties.map { key, value in
         "    var \(key): \(value)"
     }.joined(separator: "\n")
-    let setup = properties.map { key, value in
+    let setup = properties.map { key, _ in
         "        self.\(key) = nil"
     }.joined(separator: "\n")
 
@@ -162,7 +388,7 @@ func generateAppRequestContextsSwift(
     struct AppRequestContext: \(conformances.joined(separator: ", ")) {
         var coreContext: CoreRequestContextStorage
     \(variableDeclarations)
-        
+
         init(source: ApplicationRequestContextSource) {
             self.coreContext = .init(source: source)
     \(setup)
@@ -207,7 +433,7 @@ func generateWebSocketAppRequestContextSwift(
     let variableDeclarations = properties.map { key, value in
         "    var \(key): \(value)"
     }.joined(separator: "\n")
-    let setup = properties.map { key, value in
+    let setup = properties.map { key, _ in
         "        self.\(key) = nil"
     }.joined(separator: "\n")
 
@@ -258,7 +484,7 @@ func generateAddRoutesSwift(
         _ wsRouter: Router<WebSocketAppRequestContext>
     ) {
         wsRouter.ws { inbound, outbound, context in
-            // Example: Echo the input back   
+            // Example: Echo the input back
             for try await message in inbound {
                 switch message.opcode {
                 case .text:
@@ -273,7 +499,7 @@ func generateAddRoutesSwift(
         }
     }
     """
-    
+
     return """
     import Configuration
     import Hummingbird
@@ -281,7 +507,7 @@ func generateAddRoutesSwift(
     \(generateImports(features: features))
 
     \(features.contains(.login) ? loginContext : "")
-    
+
     func addRoutes(
         _ routes: Router<AppRequestContext>
     ) async throws {
@@ -322,7 +548,7 @@ func generateBuildApplicationSwift(
     \(generateServerImplementation(features: features))
 
         let router = Router(context: AppRequestContext.self)
-        
+
         router.middlewares.add(TracingMiddleware())
         router.middlewares.add(MetricsMiddleware())
         router.middlewares.add(LogRequestsMiddleware(.info))
@@ -367,7 +593,7 @@ func generateJWT(name: String) -> String {
     struct JWTMiddleware: RouterMiddleware {
         typealias Context = AppRequestContext
         let keys = JWTKeyCollection()
-        
+
         init() async throws {
             #if DEBUG
             await keys.add(
@@ -392,7 +618,7 @@ func generateJWT(name: String) -> String {
                 let jwt = try await keys.verify(token, as: \(name)Payload.self)
                 context.token = jwt
             }
-            
+
             return try await next(request, context)
         }
     }
@@ -413,7 +639,7 @@ func generateServices(
             continue
         case .otel:
             services.append("""
-            
+
                 var otelConfig = OTel.Configuration.default
                 otelConfig.serviceName = "\(name) Server"
                 // To get started, we'll use the console exporter so you can see your logs in the terminal
@@ -459,7 +685,7 @@ func generatePackageSwift(
         dependencies.merge(feature.dependencies, uniquingKeysWith: { $1 })
         targetDependencies.merge(feature.targetDependencies, uniquingKeysWith: { $1 })
     }
-    
+
     let dependenciesString = dependencies.map {
         "        .package(url: \"\($0)\", from: \"\($1)\")"
     }.joined(separator: ",\n")
