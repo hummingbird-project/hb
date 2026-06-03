@@ -3,11 +3,14 @@
         {
             "type": "swift",
             "request": "launch",
-            "args": [],
-            "cwd": "${workspaceFolder:cli}",
+            "args": [
+                "init"
+            ],
+            "cwd": "${workspaceFolder:cli}/test",
             "name": "Debug hb",
-            "program": "${workspaceFolder:cli}/.build/debug/hb",
-            "preLaunchTask": "swift: Build Debug hb"
+            "preLaunchTask": "swift: Build Debug hb",
+            "target": "hb",
+            "configuration": "debug"
         },
         {
             "type": "swift",
@@ -15,26 +18,9 @@
             "args": [],
             "cwd": "${workspaceFolder:cli}",
             "name": "Release hb",
-            "program": "${workspaceFolder:cli}/.build/release/hb",
-            "preLaunchTask": "swift: Build Release hb"
-        },
-        {
-            "type": "swift-lldb",
-            "request": "launch",
-            "args": [],
-            "cwd": "${workspaceFolder:hb}",
-            "name": "Debug HB",
-            "program": "${workspaceFolder:hb}/.build/debug/HB",
-            "preLaunchTask": "swift: Build Debug HB"
-        },
-        {
-            "type": "swift-lldb",
-            "request": "launch",
-            "args": [],
-            "cwd": "${workspaceFolder:hb}",
-            "name": "Release HB",
-            "program": "${workspaceFolder:hb}/.build/release/HB",
-            "preLaunchTask": "swift: Build Release HB"
+            "preLaunchTask": "swift: Build Release hb",
+            "target": "hb",
+            "configuration": "release"
         }
     ]
 }
