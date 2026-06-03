@@ -13,57 +13,29 @@ struct InitCommand: AsyncParsableCommand {
 
         var description: String { rawValue }
     }
+    enum ApplicationType: String, CaseIterable, CustomStringConvertible {
+        case server = "Server"
+        case lambda = "Lambda"
+
+        var description: String { rawValue }
+    }
+    enum LambdaType: String, CaseIterable, CustomStringConvertible {
+        case apiGateway = "APIGateway"
+        case apiGatewayV2 = "APIGatewayV2"
+        case functionURL = "FunctionURL"
+
+        var description: String { rawValue }
+    }
 
     static let configuration = CommandConfiguration(
         commandName: "init",
         abstract: "Initialize the hummingbird server."
     )
 
-    @Option(help: "Target folder (defaults to current folder)", completion: .directory)
+    @Argument(help: "Target folder (defaults to current folder)", completion: .directory)
     var targetFolder: String?
 
     func run() async throws {
-        enum AppType {
-            case server
-            case lambda(String)
-        }
-        let path = URL(string: FileManager.default.currentDirectoryPath)!.appending(path: "example")
-        print("Outputting to: \(path.path())")
-
-        var name = Noora().textPrompt(
-            title: TerminalText("What project name would you like to use?"),
-            prompt: TerminalText("App Name: "),
-            description: TerminalText("The name of the project you want to create."),
-            validationRules: [
-                NonEmptyValidationRule(error: "App name cannot be empty."),
-                NoWhitespaceValidationRule(error: "App name cannot contain whitespace."),
-                AsciiValidationRule(error: "App name cannot contain non-ASCII characters."),
-            ]
-        )
-        let firstLetter = name[name.startIndex].uppercased()
-        name = firstLetter + name.dropFirst()
-
-        let appType: AppType =
-            if Noora().singleChoicePrompt(
-                question: "What kind of application are you building",
-                options: ["server", "lambda"]
-            ) == "lambda" {
-                .lambda(
-                    Noora().singleChoicePrompt(
-                        question: "What kind of lambda are you building",
-                        options: ["APIGateway", "APIGatewayV2", "FunctionURL"])
-                )
-            } else {
-                .server
-            }
-
-        let choices = Noora().multipleChoicePrompt(
-            question: TerminalText("Which features would you like to enable?"),
-            options: TemplateFeature.allCases,
-        )
-
-        let templateVersion = try await getLatestTemplateVersion()
-
         // create target folder
         if let targetFolder {
             try FileManager.default.createDirectory(
@@ -77,19 +49,76 @@ struct InitCommand: AsyncParsableCommand {
             throw HBError("Could not get folder name")
         }
 
+        if try FileManager.default.contentsOfDirectory(atPath: currentFolder.string).count != 0 {
+            guard
+                Noora().yesOrNoChoicePrompt(
+                    question: "Your target folder is not empty. Do you want to continue?",
+                    collapseOnSelection: true
+                ) == true
+            else {
+                return
+            }
+        }
+
+        let context = self.constructContext(currentFolderName: currentFolderName)
+
+        // Get the latest version number of the template
+        let templateVersion = try await getLatestTemplateVersion()
+
         print("Downloading template version \(templateVersion)")
         let zipReader = try await getTemplateZipArchive(version: templateVersion)
 
+        let path = URL(string: FileManager.default.currentDirectoryPath)!.appending(path: "example")
+        print("Outputting to: \(path.path())")
+
+        try generateProject(
+            zipReader: zipReader,
+            context: context
+        )
+    }
+
+    func constructContext(currentFolderName: String) -> [String: String] {
+        let applicationType: ApplicationType = Noora().singleChoicePrompt(
+            question: "What kind of application are you building",
+            options: [.server, .lambda]
+        )
+        let appName: String
+        var lambdaType: LambdaType? = nil
+        switch applicationType {
+        case .server:
+            let name = Noora().textPrompt(
+                title: TerminalText("What would you like your executable to be named?"),
+                prompt: TerminalText("App Name: "),
+                validationRules: [
+                    NonEmptyValidationRule(error: "App name cannot be empty."),
+                    NoWhitespaceValidationRule(error: "App name cannot contain whitespace."),
+                    AsciiValidationRule(error: "App name cannot contain non-ASCII characters."),
+                ]
+            )
+            let firstLetter = name[name.startIndex].uppercased()
+            appName = firstLetter + name.dropFirst()
+        case .lambda:
+            appName = "App"
+            lambdaType = Noora().singleChoicePrompt(
+                question: "What kind of lambda are you building",
+                options: [.apiGateway, .apiGatewayV2, .functionURL])
+        }
+
+        let choices = Noora().multipleChoicePrompt(
+            question: TerminalText("Which features would you like to enable?"),
+            options: TemplateFeature.allCases,
+        )
+
         var context = [
-            "hbExecutableName": name,
             "hbPackageName": currentFolderName,
+            "hbExecutableName": appName,
         ]
-        switch appType {
+        switch applicationType {
         case .server:
             break
-        case .lambda(let type):
+        case .lambda:
             context["hbLambda"] = "yes"
-            context["hbLambdaType"] = type
+            context["hbLambdaType"] = lambdaType?.rawValue
         }
         if choices.contains(.openapi) {
             context["hbOpenAPI"] = "yes"
@@ -97,10 +126,7 @@ struct InitCommand: AsyncParsableCommand {
         if choices.contains(.vscodeSnippets) {
             context["hbVSCodeSnippets"] = "yes"
         }
-        try generateProject(
-            zipReader: zipReader,
-            context: context
-        )
+        return context
     }
 
     func getLatestTemplateVersion() async throws -> Version {
@@ -122,9 +148,9 @@ struct InitCommand: AsyncParsableCommand {
         }.value
     }
 
-    func getTemplateZipArchive(version: Version) async throws -> ZipArchiveReader<
-        some ZipReadableStorage
-    > {
+    func getTemplateZipArchive(
+        version: Version
+    ) async throws -> ZipArchiveReader<some ZipReadableStorage> {
         // download Zip file and open
         let templateZipArchiveData = try Data(
             contentsOf: URL(

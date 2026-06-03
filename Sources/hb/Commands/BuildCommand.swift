@@ -2,17 +2,17 @@ import ArgumentParser
 import Darwin.C
 import Subprocess
 
-struct RunCommand: AsyncParsableCommand {
+struct BuildCommand: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
-        commandName: "run",
-        abstract: "Build and run your application."
+        commandName: "build",
+        abstract: "Build your application."
     )
 
     @Option(name: .shortAndLong)
     var product: String? = nil
 
     func run() async throws {
-        var arguments = ["run"]
+        var arguments = ["build"]
         if let product {
             arguments.append(contentsOf: ["--product", product])
         }
