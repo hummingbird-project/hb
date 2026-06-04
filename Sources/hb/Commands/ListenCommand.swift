@@ -124,8 +124,8 @@ struct ListenCommand: AsyncParsableCommand {
                     build.exe,
                     arguments: build.arguments,
                     input: .standardInput,
-                    output: .standardOutput,
-                    error: .standardError
+                    output: .currentStandardOutput,
+                    error: .currentStandardError
                 ) { execution in
                 }
                 cont.yield(result.terminationStatus)
@@ -149,8 +149,8 @@ struct ListenCommand: AsyncParsableCommand {
                     run.exe,
                     arguments: run.arguments,
                     input: .standardInput,
-                    output: .standardOutput,
-                    error: .standardError
+                    output: .currentStandardOutput,
+                    error: .currentStandardError
                 ) { execution in
                     print("PID: \(execution.processIdentifier)")
                     if let id = try await cancellation.wait() {

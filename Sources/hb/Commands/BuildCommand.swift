@@ -25,8 +25,8 @@ struct BuildCommand: AsyncParsableCommand {
             command.exe,
             arguments: command.arguments,
             input: .none,
-            output: .standardOutput,
-            error: .standardError
+            output: .currentStandardOutput,
+            error: .currentStandardError
         ) { _ in
         }
     }

@@ -6,9 +6,9 @@ import SystemPackage
 import ZipArchive
 
 #if canImport(FoundationEssentials)
-    import FoundationEssentials
+import FoundationEssentials
 #else
-    import Foundation
+import Foundation
 #endif
 
 struct InitCommand: AsyncParsableCommand {
@@ -44,7 +44,9 @@ struct InitCommand: AsyncParsableCommand {
         // create target folder
         if let targetFolder {
             try FileManager.default.createDirectory(
-                atPath: targetFolder, withIntermediateDirectories: true)
+                atPath: targetFolder,
+                withIntermediateDirectories: true
+            )
             FileManager.default.changeCurrentDirectoryPath(targetFolder)
         }
 
@@ -106,7 +108,8 @@ struct InitCommand: AsyncParsableCommand {
             appName = "App"
             lambdaType = Noora().singleChoicePrompt(
                 question: "What kind of lambda are you building",
-                options: [.apiGateway, .apiGatewayV2, .functionURL])
+                options: [.apiGateway, .apiGatewayV2, .functionURL]
+            )
         }
 
         let choices = Noora().multipleChoicePrompt(
@@ -139,10 +142,13 @@ struct InitCommand: AsyncParsableCommand {
             .name("git"),
             arguments: [
                 "ls-remote", "--refs", "--tags", "https://github.com/hummingbird-project/template",
-            ]
-        ) { execution, stdout in
+            ],
+            input: .none,
+            output: .sequence,
+            error: .discarded
+        ) { execution in
             var versions: [Version] = []
-            for try await line in stdout.lines() {
+            for try await line in execution.standardOutput.strings() {
                 if let match = try? #/.*refs\/tags\/(.*)\n/#.wholeMatch(in: line) {
                     if let version = Version(match.output.1) {
                         versions.append(version)
@@ -150,7 +156,7 @@ struct InitCommand: AsyncParsableCommand {
                 }
             }
             return versions.sorted().last!
-        }.value
+        }.closureOutput
     }
 
     func getTemplateZipArchive(
@@ -167,7 +173,8 @@ struct InitCommand: AsyncParsableCommand {
     }
 
     func generateProject(
-        zipReader: ZipArchiveReader<some ZipReadableStorage>, context: [String: String]
+        zipReader: ZipArchiveReader<some ZipReadableStorage>,
+        context: [String: String]
     ) throws {
         let ignoreFiles: [FilePath] = [
             ".github/workflows/test-configure.yml",
@@ -202,12 +209,14 @@ struct InitCommand: AsyncParsableCommand {
                 // create sub-directories for file
                 try FileManager.default.createDirectory(
                     atPath: filename.removingLastComponent().description,
-                    withIntermediateDirectories: true)
+                    withIntermediateDirectories: true
+                )
             }
             print("Creating file \(filename)")
             if FileManager.default.createFile(
-                atPath: filename.description, contents: Data(result.utf8)) == false
-            {
+                atPath: filename.description,
+                contents: Data(result.utf8)
+            ) == false {
                 print("Failed to create \(file.filename.description)")
             }
         }
