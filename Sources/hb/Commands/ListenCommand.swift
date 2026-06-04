@@ -1,5 +1,5 @@
 import ArgumentParser
-import Darwin.C
+import AsyncAlgorithms
 import FileMonitor
 import Subprocess
 import Synchronization
@@ -58,27 +58,44 @@ struct ListenCommand: AsyncParsableCommand {
             }
 
             let (stream, cont) = AsyncStream.makeStream(of: Int.self)
+            let (cancelledStream, cancelledCont) = AsyncStream.makeStream(of: Void.self)
             var globalID = 0
             building.store(true, ordering: .relaxed)
             addBuildAndRunTasks(
                 build: build,
                 run: run,
                 group: &group,
-                cancellation: SubProcessCancellation(globalID: &globalID, stream: stream)
+                cancellation: SubProcessCancellation(globalID: &globalID, stream: stream, cancelledStreamCont: cancelledCont)
             )
-            for try await event in fileMonitor.stream {
+            enum StreamEvent {
+                case monitor(FileChange)
+                case cancelledRun
+            }
+            let combinedStream = merge(fileMonitor.stream.map { StreamEvent.monitor($0) }, cancelledStream.map { .cancelledRun })
+            for try await event in combinedStream {
                 switch event {
-                case .changed(let file):
+                case .monitor(.changed(let file)):
+                    // A file changed, should we trigger a new build.
                     print("File changed \(file)")
+                    cont.yield(globalID)
                     guard building.compareExchange(expected: false, desired: true, ordering: .relaxed).original == false else {
                         continue
                     }
-                    cont.yield(globalID)
                     addBuildAndRunTasks(
                         build: build,
                         run: run,
                         group: &group,
-                        cancellation: SubProcessCancellation(globalID: &globalID, stream: stream)
+                        cancellation: SubProcessCancellation(globalID: &globalID, stream: stream, cancelledStreamCont: cancelledCont)
+                    )
+                case .cancelledRun:
+                    guard building.compareExchange(expected: false, desired: true, ordering: .relaxed).original == false else {
+                        continue
+                    }
+                    addBuildAndRunTasks(
+                        build: build,
+                        run: run,
+                        group: &group,
+                        cancellation: SubProcessCancellation(globalID: &globalID, stream: stream, cancelledStreamCont: cancelledCont)
                     )
                 default:
                     break
@@ -97,6 +114,7 @@ struct ListenCommand: AsyncParsableCommand {
         cancellation: SubProcessCancellation
     ) {
         let (stream, cont) = AsyncThrowingStream.makeStream(of: TerminationStatus.self)
+        // Run build
         group.addTask {
             defer {
                 building.store(false, ordering: .relaxed)
@@ -115,7 +133,9 @@ struct ListenCommand: AsyncParsableCommand {
                 cont.finish()
             }
         }
+        // Run executable
         group.addTask {
+            // wait for build to complete
             var iterator = stream.makeAsyncIterator()
             switch try await iterator.next() {
             case .exited(let status):
@@ -132,6 +152,7 @@ struct ListenCommand: AsyncParsableCommand {
                     output: .standardOutput,
                     error: .standardError
                 ) { execution in
+                    print("PID: \(execution.processIdentifier)")
                     if let id = try await cancellation.wait() {
                         print("Cancelling run: \(id)")
                         try execution.send(signal: .terminate)
@@ -143,42 +164,23 @@ struct ListenCommand: AsyncParsableCommand {
         }
     }
 
-    func addSubProcessTask(
-        name: String,
-        arguments: [String],
-        group: inout ThrowingTaskGroup<Void, any Error>,
-        cancellation: SubProcessCancellation?
-    ) {
-        group.addTask {
-            _ = try await Subprocess.run(
-                .name(name),
-                arguments: .init(arguments),
-                input: .standardInput,
-                output: .standardOutput,
-                error: .standardError
-            ) { execution in
-                if let id = try await cancellation?.wait() {
-                    print("Cancelling run: \(id)")
-                    try execution.send(signal: .terminate)
-                }
-            }
-        }
-    }
-
     struct SubProcessCancellation: Sendable {
         let stream: AsyncStream<Int>
+        let cancelledStreamCont: AsyncStream<Void>.Continuation
         let id: Int
 
-        init(globalID: inout Int, stream: AsyncStream<Int>) {
+        init(globalID: inout Int, stream: AsyncStream<Int>, cancelledStreamCont: AsyncStream<Void>.Continuation) {
             globalID += 1
             self.id = globalID
             self.stream = stream
+            self.cancelledStreamCont = cancelledStreamCont
         }
 
         func wait() async throws -> Int? {
             var iterator = stream.makeAsyncIterator()
             while let value = await iterator.next() {
                 if value == id {
+                    cancelledStreamCont.yield()
                     return id
                 }
             }
@@ -186,3 +188,8 @@ struct ListenCommand: AsyncParsableCommand {
         }
     }
 }
+
+/// The type is Sendable, I should upstream this though
+///
+/// Require for the merge
+extension FileChange: @retroactive @unchecked Sendable {}
