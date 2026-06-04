@@ -7,19 +7,17 @@ struct RunCommand: AsyncParsableCommand {
         abstract: "Build and run your application."
     )
 
-    @Option(name: .shortAndLong)
-    var product: String? = nil
-
-    @Flag(name: .shortAndLong)
+    @Flag(name: [.customShort("s"), .long], help: "Use swiftly to run swift processes")
     var useSwiftly: Bool = false
+
+    @Argument(help: "The executable to run.")
+    var product: String? = nil
 
     var swiftPM: SwiftPM { .init(useSwiftly: self.useSwiftly) }
 
     func run() async throws {
-        var arguments = ["run"]
-        if let product {
-            arguments.append(contentsOf: ["--product", product])
-        }
+        let targetProduct = try await self.swiftPM.getExecutableProduct(desiredProduct: self.product)
+        let arguments = ["run", targetProduct]
         let command = swiftPM.getCommand(arguments)
         _ = try await Subprocess.run(
             command.exe,

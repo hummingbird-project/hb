@@ -19,31 +19,16 @@ struct ListenCommand: AsyncParsableCommand {
         abstract: "Listen for changes to your application source code and re-build and run it."
     )
 
-    @Option(name: .shortAndLong)
-    var product: String? = nil
-
-    @Flag(name: .shortAndLong)
+    @Flag(name: [.customShort("s"), .long], help: "Use swiftly to run swift processes")
     var useSwiftly: Bool = false
+
+    @Argument(help: "The executable to build and run.")
+    var product: String? = nil
 
     var swiftPM: SwiftPM { .init(useSwiftly: self.useSwiftly) }
 
     func run() async throws {
-        let executables = try await self.swiftPM.getExecutableProducts()
-        let targetProduct: String
-        if let product = self.product {
-            guard executables.contains(product) else {
-                throw HBError("Cannot find executable target \(product)")
-            }
-            targetProduct = product
-        } else {
-            guard executables.count != 0 else {
-                throw HBError("Package has no executables products.")
-            }
-            guard executables.count == 1 else {
-                throw HBError("Package has multiple executables. Please use \"--product\" to choose the executable you want to run.")
-            }
-            targetProduct = executables[0]
-        }
+        let targetProduct = try await self.swiftPM.getExecutableProduct(desiredProduct: self.product)
         let build = self.swiftPM.getCommand(["build", "--product", targetProduct])
         let run: (Executable, Arguments) = try await (.path(self.swiftPM.getBinaryPath(product: targetProduct)), [])
 

@@ -81,4 +81,23 @@ struct SwiftPM {
         }
     }
 
+    func getExecutableProduct(desiredProduct: String?) async throws -> String {
+        let executables = try await self.getExecutableProducts()
+        let targetProduct: String
+        if let product = desiredProduct {
+            guard executables.contains(product) else {
+                throw HBError("Cannot find executable target \(product)")
+            }
+            targetProduct = product
+        } else {
+            guard executables.count != 0 else {
+                throw HBError("Package has no executables products.")
+            }
+            guard executables.count == 1 else {
+                throw HBError("Package has multiple executables. Please use \"--product\" to choose the executable you want to run.")
+            }
+            targetProduct = executables[0]
+        }
+        return targetProduct
+    }
 }
