@@ -4,7 +4,7 @@ import PackageDescription
 let package = Package(
     name: "hb",
     platforms: [
-        .macOS(.v13)
+        .macOS(.v15)
     ],
     products: [
         .executable(name: "hb", targets: ["hb"])
@@ -15,6 +15,7 @@ let package = Package(
         .package(url: "https://github.com/hummingbird-project/swift-mustache.git", from: "2.0.0"),
         .package(url: "https://github.com/adam-fowler/swift-zip-archive.git", from: "0.6.4"),
         .package(url: "https://github.com/swiftlang/swift-subprocess", from: "0.2.0", traits: []),
+        .package(url: "https://github.com/aus-der-Technik/FileMonitor", from: "1.2.0"),
     ],
     targets: [
         .executableTarget(
@@ -25,6 +26,7 @@ let package = Package(
                 .product(name: "ZipArchive", package: "swift-zip-archive"),
                 .product(name: "Mustache", package: "swift-mustache"),
                 .product(name: "Subprocess", package: "swift-subprocess"),
+                .product(name: "FileMonitor", package: "FileMonitor"),
             ]
         )
     ]

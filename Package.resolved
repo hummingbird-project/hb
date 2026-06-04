@@ -1,6 +1,15 @@
 {
-  "originHash" : "d7839d87ae408687d36b13b9920066174f0246eee3b94c862020fa409165b9f6",
+  "originHash" : "74b0ecabed145b4e28f4c448fc72544f376f7ccb5ec788094da6a961d2569d96",
   "pins" : [
+    {
+      "identity" : "filemonitor",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/aus-der-Technik/FileMonitor",
+      "state" : {
+        "revision" : "5adbe8f2383eac5148475ef84977806bbd33e8d7",
+        "version" : "1.2.1"
+      }
+    },
     {
       "identity" : "noora",
       "kind" : "remoteSourceControl",

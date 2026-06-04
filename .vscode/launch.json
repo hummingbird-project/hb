@@ -4,7 +4,7 @@
             "type": "swift",
             "request": "launch",
             "args": [
-                "init"
+                "listen"
             ],
             "cwd": "${workspaceFolder:cli}/test",
             "name": "Debug hb",

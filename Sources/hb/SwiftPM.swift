@@ -1,0 +1,84 @@
+import Subprocess
+import System
+
+#if canImport(FoundationEssentials)
+import FoundationEssentials
+#else
+import Foundation
+#endif
+
+struct SwiftPM {
+    let useSwiftly: Bool
+
+    func getCommand(_ arguments: [String]) -> (exe: Executable, arguments: Arguments) {
+        if self.useSwiftly {
+            return (.name("swiftly"), .init(["run", "swift"] + arguments))
+        } else {
+            return (.name("swift"), .init(arguments))
+        }
+    }
+
+    func getBinaryPath(product: String) async throws -> FilePath {
+        let command = getCommand(["build", "--show-bin-path"])
+        let output = try await Subprocess.run(
+            command.exe,
+            arguments: command.arguments,
+            output: .string(limit: 1_000_000)
+        )
+        guard var standardOutput = output.standardOutput?[...] else { throw HBError("Failed to get binary path") }
+        while standardOutput.last?.isNewline == true {
+            standardOutput = standardOutput.dropLast()
+        }
+        var path = FilePath(String(standardOutput))
+        path.append(product)
+        return path
+    }
+
+    func getExecutableProducts() async throws -> [String] {
+        struct Package: Decodable {
+            enum ProductType: Decodable {
+                case library
+                case executable
+                case unknown
+
+                init(from decoder: any Decoder) throws {
+                    let container = try decoder.container(keyedBy: CodingKeys.self)
+                    if container.contains(.executable) {
+                        self = .executable
+                    } else if container.contains(.library) {
+                        self = .library
+                    } else {
+                        self = .unknown
+                    }
+                }
+
+                private enum CodingKeys: CodingKey {
+                    case library
+                    case executable
+                }
+            }
+            struct Product: Decodable {
+                let name: String
+                let type: ProductType
+            }
+            let products: [Product]
+        }
+        let command = getCommand(["package", "describe", "--type", "json"])
+        let output = try await Subprocess.run(
+            command.exe,
+            arguments: command.arguments,
+            output: .string(limit: 1_000_000)
+        )
+        guard let standardOutput = output.standardOutput?[...] else { throw HBError("Failed to get package description") }
+        do {
+            let swiftPackage = try JSONDecoder().decode(Package.self, from: Data(standardOutput.utf8))
+            return swiftPackage.products.compactMap {
+                guard $0.type == .executable else { return nil }
+                return $0.name
+            }
+        } catch {
+            throw HBError("Failed to get executable target names.")
+        }
+    }
+
+}

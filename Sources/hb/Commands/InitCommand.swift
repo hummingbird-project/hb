@@ -1,10 +1,15 @@
 import ArgumentParser
-import Foundation
 import Mustache
 import Noora
 import Subprocess
 import SystemPackage
 import ZipArchive
+
+#if canImport(FoundationEssentials)
+    import FoundationEssentials
+#else
+    import Foundation
+#endif
 
 struct InitCommand: AsyncParsableCommand {
     enum TemplateFeature: String, CaseIterable, CustomStringConvertible {

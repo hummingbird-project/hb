@@ -1,5 +1,4 @@
 import ArgumentParser
-import Darwin.C
 import Subprocess
 
 struct RunCommand: AsyncParsableCommand {
@@ -11,14 +10,20 @@ struct RunCommand: AsyncParsableCommand {
     @Option(name: .shortAndLong)
     var product: String? = nil
 
+    @Flag(name: .shortAndLong)
+    var useSwiftly: Bool = false
+
+    var swiftPM: SwiftPM { .init(useSwiftly: self.useSwiftly) }
+
     func run() async throws {
         var arguments = ["run"]
         if let product {
             arguments.append(contentsOf: ["--product", product])
         }
+        let command = swiftPM.getCommand(arguments)
         _ = try await Subprocess.run(
-            .name("swift"),
-            arguments: .init(arguments),
+            command.exe,
+            arguments: command.arguments,
             input: .none,
             output: .standardOutput,
             error: .standardError
