@@ -136,7 +136,10 @@ struct ListenCommand: AsyncParsableCommand {
             var iterator = stream.makeAsyncIterator()
             switch try await iterator.next() {
             case .exited(let status):
-                guard status == 0 else { return }
+                guard status == 0 else {
+                    print("Build failed.")
+                    return
+                }
             default:
                 return
             }
