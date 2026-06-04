@@ -69,7 +69,6 @@ struct ListenCommand: AsyncParsableCommand {
                 case .monitor(.changed(let file)):
                     // A file changed, should we trigger a new build.
                     print("File changed \(file)")
-                    print("Cancel \(globalID)")
                     cont.yield(globalID)
                     guard building.compareExchange(expected: false, desired: true, ordering: .relaxed).original == false else {
                         continue
@@ -154,7 +153,6 @@ struct ListenCommand: AsyncParsableCommand {
                 ) { execution in
                     print("PID: \(execution.processIdentifier)")
                     if let id = try await cancellation.wait() {
-                        print("Cancelling run: \(id)")
                         try execution.send(signal: .terminate)
                     }
                 }
