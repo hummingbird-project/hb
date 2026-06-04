@@ -13,14 +13,21 @@ struct RunCommand: AsyncParsableCommand {
     @Argument(help: "The executable to run.")
     var product: String? = nil
 
+    // The arguments to pass to the executable.
+    @Argument(
+        parsing: .captureForPassthrough,
+        help: "The arguments to pass to the executable."
+    )
+    var arguments: [String] = []
+
     var swiftPM: SwiftPM { .init(useSwiftly: self.useSwiftly) }
 
     func run() async throws {
         let targetProduct = try await self.swiftPM.getExecutableProduct(desiredProduct: self.product)
-        let arguments = ["run", targetProduct]
+        let arguments = ["run", targetProduct] + self.arguments
         let command = swiftPM.getCommand(arguments)
         _ = try await Subprocess.run(
-            command.exe,
+            command.executable,
             arguments: command.arguments,
             input: .none,
             output: .currentStandardOutput,

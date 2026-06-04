@@ -25,12 +25,19 @@ struct ListenCommand: AsyncParsableCommand {
     @Argument(help: "The executable to build and run.")
     var product: String? = nil
 
+    // The arguments to pass to the executable.
+    @Argument(
+        parsing: .captureForPassthrough,
+        help: "The arguments to pass to the executable."
+    )
+    var arguments: [String] = []
+
     var swiftPM: SwiftPM { .init(useSwiftly: self.useSwiftly) }
 
     func run() async throws {
         let targetProduct = try await self.swiftPM.getExecutableProduct(desiredProduct: self.product)
         let build = self.swiftPM.getCommand(["build", "--product", targetProduct])
-        let run: (Executable, Arguments) = try await (.path(self.swiftPM.getBinaryPath(product: targetProduct)), [])
+        let run = try await SubprocessCommand(.path(self.swiftPM.getBinaryPath(product: targetProduct)), arguments: .init(arguments))
 
         try await withThrowingTaskGroup(of: Void.self) { group in
             let currentDirectory = FileManager.default.currentDirectoryPath
@@ -93,8 +100,8 @@ struct ListenCommand: AsyncParsableCommand {
 
     /// Build target and once that has finished run the target
     func addBuildAndRunTasks(
-        build: (exe: Executable, arguments: Arguments),
-        run: (exe: Executable, arguments: Arguments),
+        build: SubprocessCommand,
+        run: SubprocessCommand,
         group: inout ThrowingTaskGroup<Void, any Error>,
         cancellation: SubProcessCancellation
     ) {
@@ -106,7 +113,7 @@ struct ListenCommand: AsyncParsableCommand {
             }
             do {
                 let result = try await Subprocess.run(
-                    build.exe,
+                    build.executable,
                     arguments: build.arguments,
                     input: .standardInput,
                     output: .currentStandardOutput,
@@ -131,7 +138,7 @@ struct ListenCommand: AsyncParsableCommand {
 
             do {
                 _ = try await Subprocess.run(
-                    run.exe,
+                    run.executable,
                     arguments: run.arguments,
                     input: .standardInput,
                     output: .currentStandardOutput,

@@ -10,18 +10,18 @@ import Foundation
 struct SwiftPM {
     let useSwiftly: Bool
 
-    func getCommand(_ arguments: [String]) -> (exe: Executable, arguments: Arguments) {
+    func getCommand(_ arguments: [String]) -> SubprocessCommand {
         if self.useSwiftly {
-            return (.name("swiftly"), .init(["run", "swift"] + arguments))
+            return .init(.name("swiftly"), arguments: .init(["run", "swift"] + arguments))
         } else {
-            return (.name("swift"), .init(arguments))
+            return .init(.name("swift"), arguments: .init(arguments))
         }
     }
 
     func getBinaryPath(product: String) async throws -> FilePath {
         let command = getCommand(["build", "--show-bin-path"])
         let output = try await Subprocess.run(
-            command.exe,
+            command.executable,
             arguments: command.arguments,
             output: .string(limit: 1_000_000)
         )
@@ -65,7 +65,7 @@ struct SwiftPM {
         }
         let command = getCommand(["package", "describe", "--type", "json"])
         let output = try await Subprocess.run(
-            command.exe,
+            command.executable,
             arguments: command.arguments,
             output: .string(limit: 1_000_000)
         )

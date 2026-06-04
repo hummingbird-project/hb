@@ -20,7 +20,7 @@ struct BuildCommand: AsyncParsableCommand {
         let arguments = ["build", "--product", targetProduct]
         let command = self.swiftPM.getCommand(arguments)
         _ = try await Subprocess.run(
-            command.exe,
+            command.executable,
             arguments: command.arguments,
             input: .none,
             output: .currentStandardOutput,
