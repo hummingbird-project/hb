@@ -10,14 +10,20 @@ struct BuildCommand: AsyncParsableCommand {
     @Option(name: .shortAndLong)
     var product: String? = nil
 
+    @Flag(name: .shortAndLong)
+    var useSwiftly: Bool = false
+
+    var swiftPM: SwiftPM { .init(useSwiftly: self.useSwiftly) }
+
     func run() async throws {
         var arguments = ["build"]
         if let product {
             arguments.append(contentsOf: ["--product", product])
         }
+        let command = self.swiftPM.getCommand(arguments)
         _ = try await Subprocess.run(
-            .name("swift"),
-            arguments: .init(arguments),
+            command.exe,
+            arguments: command.arguments,
             input: .none,
             output: .standardOutput,
             error: .standardError
