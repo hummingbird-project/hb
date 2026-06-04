@@ -50,7 +50,7 @@ struct ListenCommand: AsyncParsableCommand {
             }
 
             let (stream, cont) = AsyncStream.makeStream(of: Int.self)
-            let (cancelledStream, cancelledCont) = AsyncStream.makeStream(of: Void.self)
+            let (cancelledStream, cancelledCont) = AsyncStream.makeStream(of: Int.self)
             var globalID = 0
             building.store(true, ordering: .relaxed)
             addBuildAndRunTasks(
@@ -61,14 +61,15 @@ struct ListenCommand: AsyncParsableCommand {
             )
             enum StreamEvent {
                 case monitor(FileChange)
-                case cancelledRun
+                case cancelledRun(Int)
             }
-            let combinedStream = merge(fileMonitor.stream.map { StreamEvent.monitor($0) }, cancelledStream.map { .cancelledRun })
+            let combinedStream = merge(fileMonitor.stream.map { StreamEvent.monitor($0) }, cancelledStream.map { .cancelledRun($0) })
             for try await event in combinedStream {
                 switch event {
                 case .monitor(.changed(let file)):
                     // A file changed, should we trigger a new build.
                     print("File changed \(file)")
+                    print("Cancel \(globalID)")
                     cont.yield(globalID)
                     guard building.compareExchange(expected: false, desired: true, ordering: .relaxed).original == false else {
                         continue
@@ -79,7 +80,11 @@ struct ListenCommand: AsyncParsableCommand {
                         group: &group,
                         cancellation: SubProcessCancellation(globalID: &globalID, stream: stream, cancelledStreamCont: cancelledCont)
                     )
-                case .cancelledRun:
+                case .cancelledRun(let id):
+                    // Only re-build if the id of this cancelled run is the same as the global ID ie another build has not been
+                    // triggered
+                    guard id == globalID else { continue }
+                    // A file change caused the cancellation
                     guard building.compareExchange(expected: false, desired: true, ordering: .relaxed).original == false else {
                         continue
                     }
@@ -158,10 +163,10 @@ struct ListenCommand: AsyncParsableCommand {
 
     struct SubProcessCancellation: Sendable {
         let stream: AsyncStream<Int>
-        let cancelledStreamCont: AsyncStream<Void>.Continuation
+        let cancelledStreamCont: AsyncStream<Int>.Continuation
         let id: Int
 
-        init(globalID: inout Int, stream: AsyncStream<Int>, cancelledStreamCont: AsyncStream<Void>.Continuation) {
+        init(globalID: inout Int, stream: AsyncStream<Int>, cancelledStreamCont: AsyncStream<Int>.Continuation) {
             globalID += 1
             self.id = globalID
             self.stream = stream
@@ -172,7 +177,7 @@ struct ListenCommand: AsyncParsableCommand {
             var iterator = stream.makeAsyncIterator()
             while let value = await iterator.next() {
                 if value == id {
-                    cancelledStreamCont.yield()
+                    cancelledStreamCont.yield(id)
                     return id
                 }
             }
