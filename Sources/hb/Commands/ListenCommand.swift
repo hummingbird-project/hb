@@ -152,7 +152,7 @@ struct ListenCommand: AsyncParsableCommand {
                     error: .currentStandardError
                 ) { execution in
                     print("PID: \(execution.processIdentifier)")
-                    if let id = try await cancellation.wait() {
+                    if let _ = try await cancellation.wait() {
                         try execution.send(signal: .terminate)
                     }
                 }
