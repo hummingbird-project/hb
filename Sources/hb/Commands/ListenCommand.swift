@@ -64,9 +64,11 @@ struct ListenCommand: AsyncParsableCommand {
             }
             for await changed in throttledStream {
                 if changed {
-                    // A file changed, yield a cancel request and start a new build.
+                    // A file changed, yield a cancel request
                     cancellationToken.yield()
+                    // wait for previous build/run task to finish
                     await group.next()
+                    // start new build and run
                     cancellationToken = addBuildAndRunTasks(
                         build: build,
                         run: run,
