@@ -34,7 +34,9 @@ struct ListenCommand: AsyncParsableCommand {
 
     var swiftPM: SwiftPM { .init(useSwiftly: self.useSwiftly) }
 
-    func run() async throws {
+    var globalID = 0
+
+    mutating func run() async throws {
         let targetProduct = try await self.swiftPM.getExecutableProduct(desiredProduct: self.product)
         let build = self.swiftPM.getCommand(["build", "--product", targetProduct])
         let run = try await SubprocessCommand(.path(self.swiftPM.getBinaryPath(product: targetProduct)), arguments: .init(arguments))
@@ -49,49 +51,48 @@ struct ListenCommand: AsyncParsableCommand {
                 fileMonitor.stop()
             }
 
+            // Request to cancel run stream
             let (stream, cont) = AsyncStream.makeStream(of: Int.self)
+            // Run has been cancelled stream
             let (cancelledStream, cancelledCont) = AsyncStream.makeStream(of: Int.self)
-            var globalID = 0
-            building.store(true, ordering: .relaxed)
+
+            // Initial build and run
             addBuildAndRunTasks(
                 build: build,
                 run: run,
                 group: &group,
-                cancellation: SubProcessCancellation(globalID: &globalID, stream: stream, cancelledStreamCont: cancelledCont)
+                requestCancelSteam: stream,
+                cancelledStreamCont: cancelledCont
             )
             enum StreamEvent {
                 case monitor(FileChange)
                 case cancelledRun(Int)
             }
+            // combine file monitor stream with cancelled runs stream
             let combinedStream = merge(fileMonitor.stream.map { StreamEvent.monitor($0) }, cancelledStream.map { .cancelledRun($0) })
             for try await event in combinedStream {
                 switch event {
                 case .monitor(.changed(let file)):
-                    // A file changed, should we trigger a new build.
+                    // A file changed, yield a cancel request and start a new build.
                     print("File changed \(file)")
                     cont.yield(globalID)
-                    guard building.compareExchange(expected: false, desired: true, ordering: .relaxed).original == false else {
-                        continue
-                    }
                     addBuildAndRunTasks(
                         build: build,
                         run: run,
                         group: &group,
-                        cancellation: SubProcessCancellation(globalID: &globalID, stream: stream, cancelledStreamCont: cancelledCont)
+                        requestCancelSteam: stream,
+                        cancelledStreamCont: cancelledCont
                     )
                 case .cancelledRun(let id):
                     // Only re-build if the id of this cancelled run is the same as the global ID ie another build has not been
                     // triggered
                     guard id == globalID else { continue }
-                    // A file change caused the cancellation
-                    guard building.compareExchange(expected: false, desired: true, ordering: .relaxed).original == false else {
-                        continue
-                    }
                     addBuildAndRunTasks(
                         build: build,
                         run: run,
                         group: &group,
-                        cancellation: SubProcessCancellation(globalID: &globalID, stream: stream, cancelledStreamCont: cancelledCont)
+                        requestCancelSteam: stream,
+                        cancelledStreamCont: cancelledCont
                     )
                 default:
                     break
@@ -103,20 +104,27 @@ struct ListenCommand: AsyncParsableCommand {
     }
 
     /// Build target and once that has finished run the target
-    func addBuildAndRunTasks(
+    mutating func addBuildAndRunTasks(
         build: SubprocessCommand,
         run: SubprocessCommand,
         group: inout ThrowingTaskGroup<Void, any Error>,
-        cancellation: SubProcessCancellation
+        requestCancelSteam: AsyncStream<Int>,
+        cancelledStreamCont: AsyncStream<Int>.Continuation
     ) {
-        let (stream, cont) = AsyncThrowingStream.makeStream(of: TerminationStatus.self)
+        // If we are already building return
+        guard building.compareExchange(expected: false, desired: true, ordering: .relaxed).original == false else {
+            return
+        }
+        self.globalID += 1
+        let cancellation = SubProcessCancellation(id: globalID, stream: requestCancelSteam, cancelledStreamCont: cancelledStreamCont)
         // Run build
         group.addTask {
-            defer {
-                building.store(false, ordering: .relaxed)
-            }
+            let result: ExecutionResult<Void, FileDescriptorOutput, FileDescriptorOutput>
             do {
-                let result = try await Subprocess.run(
+                defer {
+                    building.store(false, ordering: .relaxed)
+                }
+                result = try await Subprocess.run(
                     build.executable,
                     arguments: build.arguments,
                     input: .standardInput,
@@ -124,16 +132,10 @@ struct ListenCommand: AsyncParsableCommand {
                     error: .currentStandardError
                 ) { execution in
                 }
-                cont.yield(result.terminationStatus)
             } catch {
-                cont.finish()
+                return
             }
-        }
-        // Run executable
-        group.addTask {
-            // wait for build to complete
-            var iterator = stream.makeAsyncIterator()
-            switch try await iterator.next() {
+            switch result.terminationStatus {
             case .exited(let status):
                 guard status == 0 else {
                     print("Build failed.")
@@ -142,22 +144,17 @@ struct ListenCommand: AsyncParsableCommand {
             default:
                 return
             }
-
-            do {
-                _ = try await Subprocess.run(
-                    run.executable,
-                    arguments: run.arguments,
-                    input: .standardInput,
-                    output: .currentStandardOutput,
-                    error: .currentStandardError
-                ) { execution in
-                    print("PID: \(execution.processIdentifier)")
-                    if let _ = try await cancellation.wait() {
-                        try execution.send(signal: .terminate)
-                    }
+            _ = try await Subprocess.run(
+                run.executable,
+                arguments: run.arguments,
+                input: .standardInput,
+                output: .currentStandardOutput,
+                error: .currentStandardError
+            ) { execution in
+                print("PID: \(execution.processIdentifier)")
+                if let _ = try await cancellation.wait() {
+                    try execution.send(signal: .terminate)
                 }
-            } catch {
-                print(error)
             }
         }
     }
@@ -167,9 +164,8 @@ struct ListenCommand: AsyncParsableCommand {
         let cancelledStreamCont: AsyncStream<Int>.Continuation
         let id: Int
 
-        init(globalID: inout Int, stream: AsyncStream<Int>, cancelledStreamCont: AsyncStream<Int>.Continuation) {
-            globalID += 1
-            self.id = globalID
+        init(id: Int, stream: AsyncStream<Int>, cancelledStreamCont: AsyncStream<Int>.Continuation) {
+            self.id = id
             self.stream = stream
             self.cancelledStreamCont = cancelledStreamCont
         }
