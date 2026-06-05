@@ -154,32 +154,4 @@ struct ListenCommand: AsyncParsableCommand {
             print("\(error)")
         }
     }
-
-    struct SubProcessCancellation: Sendable {
-        let stream: AsyncStream<Int>
-        let cancelledStreamCont: AsyncStream<Int>.Continuation
-        let id: Int
-
-        init(id: Int, stream: AsyncStream<Int>, cancelledStreamCont: AsyncStream<Int>.Continuation) {
-            self.id = id
-            self.stream = stream
-            self.cancelledStreamCont = cancelledStreamCont
-        }
-
-        func wait() async throws -> Int? {
-            var iterator = stream.makeAsyncIterator()
-            while let value = await iterator.next() {
-                if value == id {
-                    cancelledStreamCont.yield(id)
-                    return id
-                }
-            }
-            return nil
-        }
-    }
 }
-
-/// The type is Sendable, I should upstream this though
-///
-/// Require for the merge(_:_:)
-extension FileChange: @retroactive @unchecked Sendable {}
