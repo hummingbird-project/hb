@@ -124,8 +124,7 @@ struct ListenCommand: AsyncParsableCommand {
                 input: .standardInput,
                 output: .currentStandardOutput,
                 error: .currentStandardError
-            ) { execution in
-            }
+            )
         } catch {
             return
         }
