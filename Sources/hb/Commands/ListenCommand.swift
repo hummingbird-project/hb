@@ -11,8 +11,6 @@ import FoundationEssentials
 import Foundation
 #endif
 
-private let building = Atomic(false)
-
 struct ListenCommand: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "listen",
@@ -34,65 +32,41 @@ struct ListenCommand: AsyncParsableCommand {
 
     var swiftPM: SwiftPM { .init(useSwiftly: self.useSwiftly) }
 
-    var globalID = 0
-
-    mutating func run() async throws {
+    func run() async throws {
         let targetProduct = try await self.swiftPM.getExecutableProduct(desiredProduct: self.product)
         let build = self.swiftPM.getCommand(["build", "--product", targetProduct])
         let run = try await SubprocessCommand(.path(self.swiftPM.getBinaryPath(product: targetProduct)), arguments: .init(arguments))
 
-        try await withThrowingTaskGroup(of: Void.self) { group in
-            let currentDirectory = FileManager.default.currentDirectoryPath
-            let sourceDirectory = URL(filePath: currentDirectory, directoryHint: .isDirectory)
-                .appending(path: "Sources", directoryHint: .isDirectory)
-            let fileMonitor = try FileMonitor(directory: sourceDirectory)
-            try fileMonitor.start()
-            defer {
-                fileMonitor.stop()
-            }
+        let currentDirectory = FileManager.default.currentDirectoryPath
+        let sourceDirectory = URL(filePath: currentDirectory, directoryHint: .isDirectory)
+            .appending(path: "Sources", directoryHint: .isDirectory)
+        let fileMonitor = try FileMonitor(directory: sourceDirectory)
+        try fileMonitor.start()
+        defer {
+            fileMonitor.stop()
+        }
 
-            // Request to cancel run stream
-            let (stream, cont) = AsyncStream.makeStream(of: Int.self)
-            // Run has been cancelled stream
-            let (cancelledStream, cancelledCont) = AsyncStream.makeStream(of: Int.self)
-
+        await withDiscardingTaskGroup { group in
             // Initial build and run
-            addBuildAndRunTasks(
+            var cancellationToken = addBuildAndRunTasks(
                 build: build,
                 run: run,
-                group: &group,
-                requestCancelSteam: stream,
-                cancelledStreamCont: cancelledCont
+                group: &group
             )
             enum StreamEvent {
                 case monitor(FileChange)
                 case cancelledRun(Int)
             }
-            // combine file monitor stream with cancelled runs stream
-            let combinedStream = merge(fileMonitor.stream.map { StreamEvent.monitor($0) }, cancelledStream.map { .cancelledRun($0) })
-            for try await event in combinedStream {
+            for await event in fileMonitor.stream {
                 switch event {
-                case .monitor(.changed(let file)):
+                case .changed(let file):
                     // A file changed, yield a cancel request and start a new build.
                     print("File changed \(file)")
-                    cont.yield(globalID)
-                    addBuildAndRunTasks(
+                    cancellationToken.yield()
+                    cancellationToken = addBuildAndRunTasks(
                         build: build,
                         run: run,
-                        group: &group,
-                        requestCancelSteam: stream,
-                        cancelledStreamCont: cancelledCont
-                    )
-                case .cancelledRun(let id):
-                    // Only re-build if the id of this cancelled run is the same as the global ID ie another build has not been
-                    // triggered
-                    guard id == globalID else { continue }
-                    addBuildAndRunTasks(
-                        build: build,
-                        run: run,
-                        group: &group,
-                        requestCancelSteam: stream,
-                        cancelledStreamCont: cancelledCont
+                        group: &group
                     )
                 default:
                     break
@@ -104,58 +78,75 @@ struct ListenCommand: AsyncParsableCommand {
     }
 
     /// Build target and once that has finished run the target
-    mutating func addBuildAndRunTasks(
+    func addBuildAndRunTasks(
         build: SubprocessCommand,
         run: SubprocessCommand,
-        group: inout ThrowingTaskGroup<Void, any Error>,
-        requestCancelSteam: AsyncStream<Int>,
-        cancelledStreamCont: AsyncStream<Int>.Continuation
-    ) {
-        // If we are already building return
-        guard building.compareExchange(expected: false, desired: true, ordering: .relaxed).original == false else {
+        group: inout DiscardingTaskGroup
+    ) -> AsyncStream<Void>.Continuation {
+        let (stream, cont) = AsyncStream.makeStream(of: Void.self)
+        group.addTask {
+            await withTaskGroup(of: Void.self) { group in
+                group.addTask {
+                    await _addBuildAndRunTasks(build: build, run: run)
+                }
+
+                group.addTask {
+                    await stream.first { _ in true }
+                }
+                await group.next()
+                group.cancelAll()
+            }
+        }
+        return cont
+    }
+
+    func _addBuildAndRunTasks(
+        build: SubprocessCommand,
+        run: SubprocessCommand,
+    ) async {
+        var platformOptions = PlatformOptions()
+        platformOptions.teardownSequence = [
+            .gracefulShutDown(allowedDurationToNextStep: .seconds(5))
+        ]
+        let result: ExecutionResult<Void, FileDescriptorOutput, FileDescriptorOutput>
+        do {
+            result = try await Subprocess.run(
+                build.executable,
+                arguments: build.arguments,
+                platformOptions: platformOptions,
+                input: .standardInput,
+                output: .currentStandardOutput,
+                error: .currentStandardError
+            ) { execution in
+            }
+        } catch {
             return
         }
-        self.globalID += 1
-        let cancellation = SubProcessCancellation(id: globalID, stream: requestCancelSteam, cancelledStreamCont: cancelledStreamCont)
-        // Run build
-        group.addTask {
-            let result: ExecutionResult<Void, FileDescriptorOutput, FileDescriptorOutput>
-            do {
-                defer {
-                    building.store(false, ordering: .relaxed)
-                }
-                result = try await Subprocess.run(
-                    build.executable,
-                    arguments: build.arguments,
-                    input: .standardInput,
-                    output: .currentStandardOutput,
-                    error: .currentStandardError
-                ) { execution in
-                }
-            } catch {
+        switch result.terminationStatus {
+        case .exited(let status):
+            guard status == 0 else {
+                print("Build failed.")
                 return
             }
-            switch result.terminationStatus {
-            case .exited(let status):
-                guard status == 0 else {
-                    print("Build failed.")
-                    return
-                }
-            default:
-                return
-            }
+        default:
+            return
+        }
+        if Task.isCancelled {
+            return
+        }
+        do {
             _ = try await Subprocess.run(
                 run.executable,
                 arguments: run.arguments,
+                platformOptions: platformOptions,
                 input: .standardInput,
                 output: .currentStandardOutput,
                 error: .currentStandardError
             ) { execution in
                 print("PID: \(execution.processIdentifier)")
-                if let _ = try await cancellation.wait() {
-                    try execution.send(signal: .terminate)
-                }
             }
+        } catch {
+            print("\(error)")
         }
     }
 
@@ -185,5 +176,5 @@ struct ListenCommand: AsyncParsableCommand {
 
 /// The type is Sendable, I should upstream this though
 ///
-/// Require for the merge
+/// Require for the merge(_:_:)
 extension FileChange: @retroactive @unchecked Sendable {}
