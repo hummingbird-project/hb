@@ -46,30 +46,32 @@ struct ListenCommand: AsyncParsableCommand {
             fileMonitor.stop()
         }
 
-        await withDiscardingTaskGroup { group in
+        await withTaskGroup { group in
             // Initial build and run
             var cancellationToken = addBuildAndRunTasks(
                 build: build,
                 run: run,
                 group: &group
             )
-            enum StreamEvent {
-                case monitor(FileChange)
-                case cancelledRun(Int)
-            }
-            for await event in fileMonitor.stream {
+            let throttledStream = fileMonitor.stream._throttle(for: .seconds(1)) { (result: Bool?, event: FileChange) in
                 switch event {
                 case .changed(let file):
-                    // A file changed, yield a cancel request and start a new build.
                     print("File changed \(file)")
+                    return true
+                default:
+                    return result ?? false
+                }
+            }
+            for await changed in throttledStream {
+                if changed {
+                    // A file changed, yield a cancel request and start a new build.
                     cancellationToken.yield()
+                    await group.next()
                     cancellationToken = addBuildAndRunTasks(
                         build: build,
                         run: run,
                         group: &group
                     )
-                default:
-                    break
                 }
             }
 
@@ -81,7 +83,7 @@ struct ListenCommand: AsyncParsableCommand {
     func addBuildAndRunTasks(
         build: SubprocessCommand,
         run: SubprocessCommand,
-        group: inout DiscardingTaskGroup
+        group: inout TaskGroup<Void>
     ) -> AsyncStream<Void>.Continuation {
         let (stream, cont) = AsyncStream.makeStream(of: Void.self)
         group.addTask {
@@ -110,6 +112,9 @@ struct ListenCommand: AsyncParsableCommand {
         ]
         let result: ExecutionResult<Void, FileDescriptorOutput, FileDescriptorOutput>
         do {
+            if Task.isCancelled {
+                return
+            }
             result = try await Subprocess.run(
                 build.executable,
                 arguments: build.arguments,
