@@ -67,7 +67,11 @@ struct InitCommand: AsyncParsableCommand {
             }
         }
 
-        let context = self.constructContext(currentFolderName: currentFolderName)
+        var context = [
+            "hbPackageName": currentFolderName,
+            "hbExecutableName": "App",
+        ]
+        self.constructContext(&context)
 
         // Get the latest version number of the template
         let templateVersion = try await getLatestTemplateVersion()
@@ -84,7 +88,7 @@ struct InitCommand: AsyncParsableCommand {
         )
     }
 
-    func constructContext(currentFolderName: String) -> [String: String] {
+    func constructContext(_ context: inout [String: String]) {
         let applicationType: ApplicationType = Noora().singleChoicePrompt(
             question: "What kind of application are you building",
             options: [.server, .lambda]
@@ -117,13 +121,9 @@ struct InitCommand: AsyncParsableCommand {
             options: TemplateFeature.allCases,
         )
 
-        var context = [
-            "hbPackageName": currentFolderName,
-            "hbExecutableName": appName,
-        ]
         switch applicationType {
         case .server:
-            break
+            context["hbExecutableName"] = appName
         case .lambda:
             context["hbLambda"] = "yes"
             context["hbLambdaType"] = lambdaType?.rawValue
@@ -134,7 +134,13 @@ struct InitCommand: AsyncParsableCommand {
         if choices.contains(.vscodeSnippets) {
             context["hbVSCodeSnippets"] = "yes"
         }
-        return context
+    }
+
+    func defaultContext(currentFolderName: String) -> [String: String] {
+        [
+            "hbPackageName": currentFolderName,
+            "hbExecutableName": "App",
+        ]
     }
 
     func getLatestTemplateVersion() async throws -> Version {
@@ -149,13 +155,14 @@ struct InitCommand: AsyncParsableCommand {
         ) { execution in
             var versions: [Version] = []
             for try await line in execution.standardOutput.strings() {
-                if let match = try? #/.*refs\/tags\/(.*)\n/#.wholeMatch(in: line) {
+                if let match = try? #/.*refs\/tags\/(.*)/#.wholeMatch(in: line) {
                     if let version = Version(match.output.1) {
                         versions.append(version)
                     }
                 }
             }
-            return versions.sorted().last!
+            guard let version = versions.sorted().last else { throw HBError("Failed to get template version.") }
+            return version
         }.closureOutput
     }
 
