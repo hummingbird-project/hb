@@ -11,10 +11,10 @@ import FoundationEssentials
 import Foundation
 #endif
 
-struct ListenCommand: AsyncParsableCommand {
+struct WatchCommand: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
-        commandName: "listen",
-        abstract: "Listen for changes to your application source code and re-build and run it."
+        commandName: "watch",
+        abstract: "Watch for changes to your application source code and re-build and run it."
     )
 
     @Flag(name: [.customShort("s"), .long], help: "Use swiftly to run swift processes")

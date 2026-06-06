@@ -10,7 +10,7 @@ struct HB: AsyncParsableCommand {
             InitCommand.self,
             BuildCommand.self,
             RunCommand.self,
-            ListenCommand.self,
+            WatchCommand.self,
         ]
     )
 }
