@@ -8,8 +8,6 @@ struct HB: AsyncParsableCommand {
         version: "0.1.0",
         subcommands: [
             InitCommand.self,
-            BuildCommand.self,
-            RunCommand.self,
             WatchCommand.self,
         ]
     )
