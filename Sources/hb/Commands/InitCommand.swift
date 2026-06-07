@@ -40,6 +40,9 @@ struct InitCommand: AsyncParsableCommand {
     @Argument(help: "Target folder (defaults to current folder)", completion: .directory)
     var targetFolder: String?
 
+    @Flag(help: "Use default setup.")
+    var `default`: Bool = false
+
     func run() async throws {
         // create target folder
         if let targetFolder {
@@ -71,7 +74,9 @@ struct InitCommand: AsyncParsableCommand {
             "hbPackageName": currentFolderName,
             "hbExecutableName": "App",
         ]
-        self.constructContext(&context)
+        if !self.default {
+            self.constructContext(&context)
+        }
 
         // Get the latest version number of the template
         let templateVersion = try await getLatestTemplateVersion()
@@ -79,8 +84,7 @@ struct InitCommand: AsyncParsableCommand {
         print("Downloading template version \(templateVersion)")
         let zipReader = try await getTemplateZipArchive(version: templateVersion)
 
-        let path = URL(string: FileManager.default.currentDirectoryPath)!.appending(path: "example")
-        print("Outputting to: \(path.path())")
+        print("Outputting to: \(currentFolder.description)")
 
         try generateProject(
             zipReader: zipReader,
@@ -134,13 +138,6 @@ struct InitCommand: AsyncParsableCommand {
         if choices.contains(.vscodeSnippets) {
             context["hbVSCodeSnippets"] = "yes"
         }
-    }
-
-    func defaultContext(currentFolderName: String) -> [String: String] {
-        [
-            "hbPackageName": currentFolderName,
-            "hbExecutableName": "App",
-        ]
     }
 
     func getLatestTemplateVersion() async throws -> Version {
