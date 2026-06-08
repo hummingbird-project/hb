@@ -85,7 +85,7 @@ struct InitCommand: AsyncParsableCommand {
             self.constructContext(&context)
         }
 
-        if template.hasPrefix("http") || template.hasPrefix("git@") {
+        if template.hasPrefix("http://") || template.hasPrefix("https://") || template.hasPrefix("git@") {
             // Get the latest version number of the template
             let templateVersion = try await getLatestTemplateVersion()
 
