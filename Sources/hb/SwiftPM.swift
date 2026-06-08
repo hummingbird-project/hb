@@ -1,5 +1,5 @@
 import Subprocess
-import System
+import SystemPackage
 
 #if canImport(FoundationEssentials)
 import FoundationEssentials

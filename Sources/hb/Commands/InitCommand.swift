@@ -11,6 +11,10 @@ import FoundationEssentials
 import Foundation
 #endif
 
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
+
 struct InitCommand: AsyncParsableCommand {
     enum TemplateFeature: String, CaseIterable, CustomStringConvertible {
         case openapi = "OpenAPI"
@@ -50,7 +54,7 @@ struct InitCommand: AsyncParsableCommand {
                 atPath: targetFolder,
                 withIntermediateDirectories: true
             )
-            FileManager.default.changeCurrentDirectoryPath(targetFolder)
+            _ = FileManager.default.changeCurrentDirectoryPath(targetFolder)
         }
 
         // get folder name
