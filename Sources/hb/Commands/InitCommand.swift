@@ -197,7 +197,7 @@ struct InitCommand: AsyncParsableCommand {
 
             // remove first directory from filename and verify we want this file
             var filename = file.filename
-            guard filename.removePrefix(FilePath(rootComponent.description)) == true else {
+            guard filename.removePrefix(.init(rootComponent.description)) == true else {
                 continue
             }
             guard filename.length > 0 else { continue }
