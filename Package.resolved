@@ -1,5 +1,5 @@
 {
-  "originHash" : "cce8ac8af86080fdd965e86f092a40246725abed023aa9717f2405000e547a90",
+  "originHash" : "8fd379c81906f773772a26ee903322928abf05448256799ee45d29a185584263",
   "pins" : [
     {
       "identity" : "filemonitor",
@@ -42,8 +42,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/apple/swift-argument-parser.git",
       "state" : {
-        "revision" : "ca37474853a4b5f59a22c74bfdd449b1f6bc4cc2",
-        "version" : "1.8.1"
+        "revision" : "6a52f3251125d74daf04fcbd5e6f08a75d074382",
+        "version" : "1.8.2"
       }
     },
     {
@@ -94,10 +94,10 @@
     {
       "identity" : "swift-system",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/apple/swift-system.git",
+      "location" : "https://github.com/apple/swift-system",
       "state" : {
-        "revision" : "7c6ad0fc39d0763e0b699210e4124afd5041c5df",
-        "version" : "1.6.4"
+        "revision" : "669763cfd5806a67e21972d7e5e2d6b80b1ea985",
+        "version" : "1.6.5"
       }
     },
     {
@@ -105,8 +105,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/adam-fowler/swift-zip-archive.git",
       "state" : {
-        "revision" : "adc5563479747523cd2ae20ee9e9ce0adc7c4d7a",
-        "version" : "0.7.0"
+        "revision" : "8c38d48f2331cd157f7f06b279dbc6f2e150da90",
+        "version" : "0.8.0"
       }
     }
   ],

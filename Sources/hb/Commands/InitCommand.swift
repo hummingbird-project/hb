@@ -47,6 +47,9 @@ struct InitCommand: AsyncParsableCommand {
     @Flag(help: "Use default setup.")
     var `default`: Bool = false
 
+    @Option(help: "Path to custom template folder or git repository.")
+    var template: String = "https://github.com/hummingbird-project/template"
+
     func run() async throws {
         // create target folder
         if let targetFolder {
@@ -82,18 +85,29 @@ struct InitCommand: AsyncParsableCommand {
             self.constructContext(&context)
         }
 
-        // Get the latest version number of the template
-        let templateVersion = try await getLatestTemplateVersion()
+        if template.hasPrefix("http") || template.hasPrefix("git@") {
+            // Get the latest version number of the template
+            let templateVersion = try await getLatestTemplateVersion()
 
-        print("Downloading template version \(templateVersion)")
-        let zipReader = try await getTemplateZipArchive(version: templateVersion)
+            print("Downloading template version \(templateVersion)")
+            let zipReader = try await getTemplateZipArchive(repository: self.template, version: templateVersion)
 
-        print("Outputting to: \(currentFolder.description)")
+            print("Outputting to: \(currentFolder.description)")
 
-        try generateProject(
-            zipReader: zipReader,
-            context: context
-        )
+            try generateProject(
+                zipReader: zipReader,
+                context: context
+            )
+        } else {
+            let zipReader = try createZipFromFolder(FilePath(self.template))
+
+            print("Outputting to: \(currentFolder.description)")
+
+            try generateProject(
+                zipReader: zipReader,
+                context: context
+            )
+        }
     }
 
     func constructContext(_ context: inout [String: String]) {
@@ -148,7 +162,7 @@ struct InitCommand: AsyncParsableCommand {
         try await Subprocess.run(
             .name("git"),
             arguments: [
-                "ls-remote", "--refs", "--tags", "https://github.com/hummingbird-project/template",
+                "ls-remote", "--refs", "--tags", self.template,
             ],
             input: .none,
             output: .sequence,
@@ -168,16 +182,36 @@ struct InitCommand: AsyncParsableCommand {
     }
 
     func getTemplateZipArchive(
+        repository: String,
         version: Version
     ) async throws -> ZipArchiveReader<some ZipReadableStorage> {
         // download Zip file and open
+        let url =
+            if repository.hasSuffix(".git") {
+                repository.dropLast(4)
+            } else {
+                repository[...]
+            }
         let templateZipArchiveData = try Data(
             contentsOf: URL(
                 string:
-                    "https://github.com/hummingbird-project/template/archive/refs/tags/\(version).zip"
+                    "\(url)/archive/refs/tags/\(version).zip"
             )!
         )
         return try ZipArchiveReader(buffer: templateZipArchiveData)
+    }
+
+    func createZipFromFolder(_ folder: FilePath) throws -> ZipArchiveReader<some ZipReadableStorage> {
+        let zipArchiveWriter = ZipArchiveWriter()
+        try zipArchiveWriter.writeFolderContents(
+            folder,
+            options: [.recursive, .includeContainingFolder, .includeHiddenFiles]
+        ) { file, isDirectory in
+            // don't include SwiftPM build folder or the git folder
+            file.lastComponent != ".build" && file.lastComponent != ".git"
+        }
+        let buffer = try zipArchiveWriter.finalizeBuffer()
+        return try ZipArchiveReader(buffer: buffer)
     }
 
     func generateProject(
