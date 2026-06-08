@@ -3,7 +3,12 @@ import AsyncAlgorithms
 import FileMonitor
 import Subprocess
 import Synchronization
+
+#if canImport(System)
 import System
+#else
+import SystemPackage
+#endif
 
 #if canImport(FoundationEssentials)
 import FoundationEssentials

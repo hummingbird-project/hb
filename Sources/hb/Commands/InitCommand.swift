@@ -11,6 +11,10 @@ import FoundationEssentials
 import Foundation
 #endif
 
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
+
 struct InitCommand: AsyncParsableCommand {
     enum TemplateFeature: String, CaseIterable, CustomStringConvertible {
         case openapi = "OpenAPI"
@@ -50,7 +54,7 @@ struct InitCommand: AsyncParsableCommand {
                 atPath: targetFolder,
                 withIntermediateDirectories: true
             )
-            FileManager.default.changeCurrentDirectoryPath(targetFolder)
+            _ = FileManager.default.changeCurrentDirectoryPath(targetFolder)
         }
 
         // get folder name
@@ -193,7 +197,7 @@ struct InitCommand: AsyncParsableCommand {
 
             // remove first directory from filename and verify we want this file
             var filename = file.filename
-            guard filename.removePrefix(FilePath(rootComponent.description)) == true else {
+            guard filename.removePrefix(.init(rootComponent.description)) == true else {
                 continue
             }
             guard filename.length > 0 else { continue }
