@@ -2,6 +2,15 @@
 
 The Hummingbird command line tool
 
+## Installing
+
+You can install hb using homebrew
+
+```
+brew tap hummingbird-project/tap
+brew install hb
+```
+
 ## Create a new project
 
 ```
