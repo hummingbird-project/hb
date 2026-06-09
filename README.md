@@ -2,7 +2,7 @@
 
 The Hummingbird command line tool
 
-## Create new hummingbird projects
+## Create a new project
 
 ```
 hb init my-project
