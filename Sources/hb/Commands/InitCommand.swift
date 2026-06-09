@@ -11,7 +11,7 @@ import FoundationEssentials
 import Foundation
 #endif
 
-#if canImport(FoundationNetworking)
+#if os(Linux)
 import FoundationNetworking
 #endif
 
@@ -192,13 +192,13 @@ struct InitCommand: AsyncParsableCommand {
             } else {
                 repository[...]
             }
-        let templateZipArchiveData = try Data(
-            contentsOf: URL(
+        let templateZipArchiveData = try await URLSession.shared.data(
+            from: URL(
                 string:
                     "\(url)/archive/refs/tags/\(version).zip"
             )!
         )
-        return try ZipArchiveReader(buffer: templateZipArchiveData)
+        return try ZipArchiveReader(buffer: templateZipArchiveData.0)
     }
 
     func createZipFromFolder(_ folder: FilePath) throws -> ZipArchiveReader<some ZipReadableStorage> {
