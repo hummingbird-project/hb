@@ -1,4 +1,5 @@
 import ArgumentParser
+import AsyncHTTPClient
 import Mustache
 import Noora
 import Subprocess
@@ -192,13 +193,9 @@ struct InitCommand: AsyncParsableCommand {
             } else {
                 repository[...]
             }
-        let templateZipArchiveData = try await URLSession.shared.data(
-            from: URL(
-                string:
-                    "\(url)/archive/refs/tags/\(version).zip"
-            )!
-        )
-        return try ZipArchiveReader(buffer: templateZipArchiveData.0)
+        let response = try await HTTPClient.shared.get(url: "\(url)/archive/refs/tags/\(version).zip").get()
+        guard let responseBody = response.body else { throw HBError("Failed to download release \(version)") }
+        return try ZipArchiveReader(buffer: Data(buffer: responseBody))
     }
 
     func createZipFromFolder(_ folder: FilePath) throws -> ZipArchiveReader<some ZipReadableStorage> {
