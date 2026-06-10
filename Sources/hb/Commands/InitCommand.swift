@@ -12,10 +12,6 @@ import FoundationEssentials
 import Foundation
 #endif
 
-#if os(Linux)
-import FoundationNetworking
-#endif
-
 struct InitCommand: AsyncParsableCommand {
     enum TemplateFeature: String, CaseIterable, CustomStringConvertible {
         case openapi = "OpenAPI"
