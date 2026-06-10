@@ -23,14 +23,14 @@ struct TemplateDefinition: Decodable {
                 let prompt: String
                 let description: String?
                 let validationRules: [ValidationRule]
-                let variable: String
+                let contextKey: String
                 let next: String?
             }
             struct Branch: Decodable {
                 struct Option: Decodable, CustomStringConvertible, Equatable {
                     let name: String
                     let displayName: String?
-                    let variable: String?
+                    let contextKey: String?
                     let next: String?
 
                     var description: String { self.displayName ?? self.name }
@@ -46,14 +46,14 @@ struct TemplateDefinition: Decodable {
                     var description: String { self.displayName ?? self.name }
                 }
                 let description: String?
-                let variable: String
+                let contextKey: String
                 let options: [Option]
                 let next: String?
             }
             struct MultipleChoice: Decodable {
                 struct Option: Decodable, CustomStringConvertible, Equatable {
                     let name: String
-                    let variable: String
+                    let contextKey: String
 
                     var description: String { self.name }
                 }
@@ -123,7 +123,7 @@ struct TemplateDefinition: Decodable {
                     description: text.description.map { "\($0)" },
                     validationRules: text.validationRules.map(\.rule)
                 )
-                context[text.variable] = answer
+                context[text.contextKey] = answer
                 id = text.next
             case .branch(let options):
                 let choice = Noora().singleChoicePrompt(
@@ -131,8 +131,8 @@ struct TemplateDefinition: Decodable {
                     options: options.options,
                     description: options.description.map { "\($0)" }
                 )
-                if let variable = choice.variable {
-                    context[variable] = "yes"
+                if let contextKey = choice.contextKey {
+                    context[contextKey] = "yes"
                 }
                 id = choice.next
             case .singleChoice(let singleChoice):
@@ -141,7 +141,7 @@ struct TemplateDefinition: Decodable {
                     options: singleChoice.options,
                     description: singleChoice.description.map { "\($0)" }
                 )
-                context[singleChoice.variable] = choice.name
+                context[singleChoice.contextKey] = choice.name
                 id = singleChoice.next
             case .multipleChoice(let multipleChoice):
                 let choices = Noora().multipleChoicePrompt(
@@ -149,7 +149,7 @@ struct TemplateDefinition: Decodable {
                     options: multipleChoice.options,
                 )
                 for choice in choices {
-                    context[choice.variable] = "yes"
+                    context[choice.contextKey] = "yes"
                 }
                 id = multipleChoice.next
             }
