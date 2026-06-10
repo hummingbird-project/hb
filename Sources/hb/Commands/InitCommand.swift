@@ -170,12 +170,16 @@ struct InitCommand: AsyncParsableCommand {
             "metadata.json",
         ]
         let directory = try zipReader.readDirectory()
+
+        // Get metadata.json and build template definition
         guard let metadataJsonEntry = directory.first(where: { $0.filename.lastComponent == "metadata.json" }) else {
             throw HBError("Failed to find template metadata.")
         }
         let metadataJson = try zipReader.readFile(metadataJsonEntry)
-        let metadata = try JSONDecoder().decode(TemplateDefinition.self, from: Data(metadataJson))
-        try metadata.constructContext(&context)
+        let templateDefinition = try JSONDecoder().decode(TemplateDefinition.self, from: Data(metadataJson))
+        // construct context from template definition
+        try templateDefinition.constructContext(&context)
+
         for file in directory {
             guard let rootComponent = file.filename.components.first else { continue }
             guard !file.isDirectory else { continue }
