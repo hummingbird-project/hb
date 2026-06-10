@@ -9,6 +9,7 @@
 import ArgumentParser
 import AsyncHTTPClient
 import Mustache
+import NIOFoundationCompat
 import Noora
 import Subprocess
 import SystemPackage
