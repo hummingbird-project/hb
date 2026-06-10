@@ -1,0 +1,141 @@
+import Noora
+
+/// Define questions and parameters for template
+struct TemplateDefinition: Decodable {
+    struct Question: Decodable {
+        enum QuestionType: Decodable {
+            enum ValidationRule: String, Decodable {
+                case nonEmpty
+                case noWhitespace
+                case allASCII
+
+                var rule: ValidatableRule {
+                    switch self {
+                    case .nonEmpty: NonEmptyValidationRule(error: "String cannot be empty.")
+                    case .noWhitespace: NoWhitespaceValidationRule(error: "String cannot contain whitespace")
+                    case .allASCII: AsciiValidationRule(error: "String cannot contain non-ASCII values.")
+                    }
+                }
+            }
+            struct Text: Decodable {
+                let prompt: String
+                let description: String?
+                let validationRules: [ValidationRule]
+                let variable: String
+                let next: String?
+            }
+            struct Options: Decodable {
+                struct Option: Decodable, CustomStringConvertible, Equatable {
+                    let name: String
+                    let displayName: String?
+                    let variable: String?
+                    let next: String?
+
+                    var description: String { self.displayName ?? self.name }
+                }
+                let description: String?
+                let options: [Option]
+            }
+            struct SingleChoice: Decodable {
+                struct Option: Decodable, CustomStringConvertible, Equatable {
+                    let name: String
+                    let displayName: String?
+
+                    var description: String { self.displayName ?? self.name }
+                }
+                let description: String?
+                let variable: String
+                let options: [Option]
+                let next: String?
+            }
+            struct MultipleChoice: Decodable {
+                struct Option: Decodable, CustomStringConvertible, Equatable {
+                    let name: String
+                    let variable: String
+
+                    var description: String { self.name }
+                }
+                let options: [Option]
+                let next: String?
+            }
+            case text(Text)
+            case option(Options)
+            case singleChoice(SingleChoice)
+            case multipleChoice(MultipleChoice)
+        }
+        let question: String
+        let type: QuestionType
+
+        init(from decoder: any Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            self.question = try container.decode(String.self, forKey: .question)
+            if container.contains(.text) {
+                self.type = .text(try container.decode(QuestionType.Text.self, forKey: .text))
+            } else if container.contains(.singleChoice) {
+                self.type = .singleChoice(try container.decode(QuestionType.SingleChoice.self, forKey: .singleChoice))
+            } else if container.contains(.option) {
+                self.type = .option(try container.decode(QuestionType.Options.self, forKey: .option))
+            } else if container.contains(.multipleChoice) {
+                self.type = .multipleChoice(try container.decode(QuestionType.MultipleChoice.self, forKey: .multipleChoice))
+            } else {
+                throw DecodingError.typeMismatch(
+                    QuestionType.self,
+                    .init(codingPath: decoder.codingPath, debugDescription: "Failed to decode QuestionType enum.")
+                )
+            }
+        }
+        private enum CodingKeys: String, CodingKey {
+            case question
+            case text
+            case option
+            case singleChoice = "select"
+            case multipleChoice = "multi"
+        }
+    }
+    let questions: [String: Question]
+
+    func constructContext(_ context: inout [String: String]) throws {
+        var id: String? = "start"
+        while id != nil {
+            guard let question = self.questions[id!] else { throw HBError("Invalid metadata id: \(id!)") }
+            switch question.type {
+            case .text(let text):
+                let answer = Noora().textPrompt(
+                    title: "\(question.question)",
+                    prompt: "\(text.prompt)",
+                    description: text.description.map { "\($0)" },
+                    validationRules: text.validationRules.map(\.rule)
+                )
+                context[text.variable] = answer
+                id = text.next
+            case .option(let options):
+                let choice = Noora().singleChoicePrompt(
+                    question: "\(question.question)",
+                    options: options.options,
+                    description: options.description.map { "\($0)" }
+                )
+                if let variable = choice.variable {
+                    context[variable] = "yes"
+                }
+                id = choice.next
+            case .singleChoice(let singleChoice):
+                let choice = Noora().singleChoicePrompt(
+                    question: "\(question.question)",
+                    options: singleChoice.options,
+                    description: singleChoice.description.map { "\($0)" }
+                )
+                context[singleChoice.variable] = choice.name
+                id = singleChoice.next
+            case .multipleChoice(let multipleChoice):
+                let choices = Noora().multipleChoicePrompt(
+                    question: "\(question.question)",
+                    options: multipleChoice.options,
+                )
+                for choice in choices {
+                    context[choice.variable] = "yes"
+                }
+                id = multipleChoice.next
+            }
+        }
+    }
+}

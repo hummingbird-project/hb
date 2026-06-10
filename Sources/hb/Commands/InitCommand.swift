@@ -24,26 +24,6 @@ import FoundationNetworking
 #endif
 
 struct InitCommand: AsyncParsableCommand {
-    enum TemplateFeature: String, CaseIterable, CustomStringConvertible {
-        case openapi = "OpenAPI"
-        case vscodeSnippets = "Visual Studio Code Snippets"
-
-        var description: String { rawValue }
-    }
-    enum ApplicationType: String, CaseIterable, CustomStringConvertible {
-        case server = "Server"
-        case lambda = "Lambda"
-
-        var description: String { rawValue }
-    }
-    enum LambdaType: String, CaseIterable, CustomStringConvertible {
-        case apiGateway = "APIGateway"
-        case apiGatewayV2 = "APIGatewayV2"
-        case functionURL = "FunctionURL"
-
-        var description: String { rawValue }
-    }
-
     static let configuration = CommandConfiguration(
         commandName: "init",
         abstract: "Initialize the hummingbird server."
@@ -59,6 +39,7 @@ struct InitCommand: AsyncParsableCommand {
     var template: String = "https://github.com/hummingbird-project/template"
 
     func run() async throws {
+        let startFolder = FilePath(FileManager.default.currentDirectoryPath)
         // create target folder
         if let targetFolder {
             try FileManager.default.createDirectory(
@@ -85,14 +66,10 @@ struct InitCommand: AsyncParsableCommand {
             }
         }
 
-        var context = [
+        let context = [
             "hbPackageName": currentFolderName,
             "hbExecutableName": "App",
         ]
-        if !self.default {
-            self.constructContext(&context)
-        }
-
         if template.hasPrefix("http://") || template.hasPrefix("https://") || template.hasPrefix("git@") {
             // Get the latest version number of the template
             let templateVersion = try await getLatestTemplateVersion()
@@ -107,7 +84,13 @@ struct InitCommand: AsyncParsableCommand {
                 context: context
             )
         } else {
-            let zipReader = try createZipFromFolder(FilePath(self.template))
+            var filePath = FilePath(self.template)
+            if filePath.isRelative {
+                filePath = startFolder.pushing(filePath)
+                filePath = filePath.lexicallyNormalized()
+            }
+
+            let zipReader = try createZipFromFolder(filePath)
 
             print("Outputting to: \(currentFolder.description)")
 
@@ -115,54 +98,6 @@ struct InitCommand: AsyncParsableCommand {
                 zipReader: zipReader,
                 context: context
             )
-        }
-    }
-
-    func constructContext(_ context: inout [String: String]) {
-        let applicationType: ApplicationType = Noora().singleChoicePrompt(
-            question: "What kind of application are you building",
-            options: [.server, .lambda]
-        )
-        let appName: String
-        var lambdaType: LambdaType? = nil
-        switch applicationType {
-        case .server:
-            let name = Noora().textPrompt(
-                title: TerminalText("What would you like your executable to be named?"),
-                prompt: TerminalText("App Name: "),
-                validationRules: [
-                    NonEmptyValidationRule(error: "App name cannot be empty."),
-                    NoWhitespaceValidationRule(error: "App name cannot contain whitespace."),
-                    AsciiValidationRule(error: "App name cannot contain non-ASCII characters."),
-                ]
-            )
-            let firstLetter = name[name.startIndex].uppercased()
-            appName = firstLetter + name.dropFirst()
-        case .lambda:
-            appName = "App"
-            lambdaType = Noora().singleChoicePrompt(
-                question: "What kind of lambda are you building",
-                options: [.apiGateway, .apiGatewayV2, .functionURL]
-            )
-        }
-
-        let choices = Noora().multipleChoicePrompt(
-            question: TerminalText("Which features would you like to enable?"),
-            options: TemplateFeature.allCases,
-        )
-
-        switch applicationType {
-        case .server:
-            context["hbExecutableName"] = appName
-        case .lambda:
-            context["hbLambda"] = "yes"
-            context["hbLambdaType"] = lambdaType?.rawValue
-        }
-        if choices.contains(.openapi) {
-            context["hbOpenAPI"] = "yes"
-        }
-        if choices.contains(.vscodeSnippets) {
-            context["hbVSCodeSnippets"] = "yes"
         }
     }
 
@@ -226,13 +161,21 @@ struct InitCommand: AsyncParsableCommand {
         zipReader: ZipArchiveReader<some ZipReadableStorage>,
         context: [String: String]
     ) throws {
+        var context = context
         let ignoreFiles: [FilePath] = [
             ".github/workflows/test-configure.yml",
             "configure.sh",
             "scripts/download.sh",
             "scripts/test_configure.sh",
+            "metadata.json",
         ]
         let directory = try zipReader.readDirectory()
+        guard let metadataJsonEntry = directory.first(where: { $0.filename.lastComponent == "metadata.json" }) else {
+            throw HBError("Failed to find template metadata.")
+        }
+        let metadataJson = try zipReader.readFile(metadataJsonEntry)
+        let metadata = try JSONDecoder().decode(TemplateDefinition.self, from: Data(metadataJson))
+        try metadata.constructContext(&context)
         for file in directory {
             guard let rootComponent = file.filename.components.first else { continue }
             guard !file.isDirectory else { continue }
