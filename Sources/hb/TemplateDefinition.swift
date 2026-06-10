@@ -24,7 +24,7 @@ struct TemplateDefinition: Decodable {
                 let variable: String
                 let next: String?
             }
-            struct Options: Decodable {
+            struct Branch: Decodable {
                 struct Option: Decodable, CustomStringConvertible, Equatable {
                     let name: String
                     let displayName: String?
@@ -59,7 +59,7 @@ struct TemplateDefinition: Decodable {
                 let next: String?
             }
             case text(Text)
-            case option(Options)
+            case branch(Branch)
             case singleChoice(SingleChoice)
             case multipleChoice(MultipleChoice)
         }
@@ -73,8 +73,8 @@ struct TemplateDefinition: Decodable {
                 self.type = .text(try container.decode(QuestionType.Text.self, forKey: .text))
             } else if container.contains(.singleChoice) {
                 self.type = .singleChoice(try container.decode(QuestionType.SingleChoice.self, forKey: .singleChoice))
-            } else if container.contains(.option) {
-                self.type = .option(try container.decode(QuestionType.Options.self, forKey: .option))
+            } else if container.contains(.branch) {
+                self.type = .branch(try container.decode(QuestionType.Branch.self, forKey: .branch))
             } else if container.contains(.multipleChoice) {
                 self.type = .multipleChoice(try container.decode(QuestionType.MultipleChoice.self, forKey: .multipleChoice))
             } else {
@@ -87,9 +87,9 @@ struct TemplateDefinition: Decodable {
         private enum CodingKeys: String, CodingKey {
             case question
             case text
-            case option
+            case branch
             case singleChoice = "select"
-            case multipleChoice = "multi"
+            case multipleChoice = "multi-select"
         }
     }
     let questions: [String: Question]
@@ -108,7 +108,7 @@ struct TemplateDefinition: Decodable {
                 )
                 context[text.variable] = answer
                 id = text.next
-            case .option(let options):
+            case .branch(let options):
                 let choice = Noora().singleChoicePrompt(
                     question: "\(question.question)",
                     options: options.options,
