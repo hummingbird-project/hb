@@ -2,6 +2,8 @@ import Noora
 
 /// Define questions and parameters for template
 struct TemplateDefinition: Decodable {
+    static let currentVersion: Int = 1
+
     struct Question: Decodable {
         enum QuestionType: Decodable {
             enum ValidationRule: String, Decodable {
@@ -92,7 +94,22 @@ struct TemplateDefinition: Decodable {
             case multipleChoice = "multi-select"
         }
     }
+    let version: Int
     let questions: [String: Question]
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.version = try container.decode(Int.self, forKey: .version)
+        guard self.version <= Self.currentVersion else {
+            throw HBError("The metadata.json file expects a later version of hb. Upgrade hb to use this template.")
+        }
+        self.questions = try container.decode([String: Question].self, forKey: .questions)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case version
+        case questions
+    }
 
     func constructContext(_ context: inout [String: String]) throws {
         var id: String? = "start"
