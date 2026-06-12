@@ -205,6 +205,10 @@ struct InitCommand: AsyncParsableCommand {
                     withIntermediateDirectories: true
                 )
             }
+            // remove mustache extension
+            if filename.extension == "mustache", let stem = filename.stem {
+                filename = filename.removingLastComponent().appending(stem)
+            }
             print("Creating file \(filename)")
             if FileManager.default.createFile(
                 atPath: filename.description,
