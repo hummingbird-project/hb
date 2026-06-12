@@ -121,8 +121,8 @@ struct TemplateDefinition: Decodable {
 
     func constructContext(_ context: inout [String: String]) throws {
         var id: String? = "start"
-        while id != nil {
-            guard let question = self.questions[id!] else { throw HBError("Invalid metadata id: \(id!)") }
+        while let _id = id {
+            guard let question = self.questions[_id] else { throw HBError("Invalid metadata id: \(_id)") }
             switch question.type {
             case .text(let text):
                 let answer = Noora().textPrompt(
