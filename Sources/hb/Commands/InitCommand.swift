@@ -27,6 +27,11 @@ struct InitCommand: AsyncParsableCommand {
         abstract: "Initialize the hummingbird server."
     )
 
+    static let readmeTemplate = """
+        # {{hbPackageName}}
+        Hummingbird server framework project
+        """
+
     @Argument(help: "Target folder (defaults to current folder)", completion: .directory)
     var targetFolder: String?
 
@@ -161,6 +166,7 @@ struct InitCommand: AsyncParsableCommand {
             "configure.sh",
             "scripts/download.sh",
             "scripts/test_configure.sh",
+            "README.md",
             "metadata.json",
         ]
         let directory = try zipReader.readDirectory()
@@ -214,8 +220,17 @@ struct InitCommand: AsyncParsableCommand {
                 atPath: filename.description,
                 contents: Data(result.utf8)
             ) == false {
-                print("Failed to create \(file.filename.description)")
+                print("Failed to create \(filename.description)")
             }
+        }
+        print("Creating file README.md")
+        let readmeTemplate = try MustacheTemplate(string: Self.readmeTemplate)
+        let readme = readmeTemplate.render(context)
+        if FileManager.default.createFile(
+            atPath: "README.md",
+            contents: Data(readme.utf8)
+        ) == false {
+            print("Failed to create README.md")
         }
     }
 }
