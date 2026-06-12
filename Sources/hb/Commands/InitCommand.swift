@@ -172,7 +172,9 @@ struct InitCommand: AsyncParsableCommand {
         let metadataJson = try zipReader.readFile(metadataJsonEntry)
         let templateDefinition = try JSONDecoder().decode(TemplateDefinition.self, from: Data(metadataJson))
         // construct context from template definition
-        try templateDefinition.constructContext(&context)
+        if !self.default {
+            try templateDefinition.constructContext(&context)
+        }
 
         for file in directory {
             guard let rootComponent = file.filename.components.first else { continue }
