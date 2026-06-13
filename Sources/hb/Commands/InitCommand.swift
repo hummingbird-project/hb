@@ -156,15 +156,6 @@ struct InitCommand: AsyncParsableCommand {
         context: [String: String]
     ) throws {
         var context = context
-        let ignoreFiles: [FilePath] = [
-            ".github/workflows/test-configure.yml",
-            "configure.sh",
-            "scripts/download.sh",
-            "scripts/test_configure.sh",
-            "README.md",
-            "LICENSE",
-            "metadata.json",
-        ]
         let directory = try zipReader.readDirectory()
 
         // Get metadata.json and build template definition
@@ -177,6 +168,8 @@ struct InitCommand: AsyncParsableCommand {
         if !self.default {
             try templateDefinition.constructContext(&context)
         }
+
+        let ignoreFiles = templateDefinition.ignore.map { FilePath($0) }
 
         for file in directory {
             guard let rootComponent = file.filename.components.first else { continue }

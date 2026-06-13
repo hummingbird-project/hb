@@ -10,7 +10,7 @@ import Noora
 
 /// Define questions and parameters for template
 struct TemplateDefinition: Decodable {
-    static let currentVersion: Int = 1
+    static let currentVersion: Int = 2
 
     struct Question: Decodable {
         enum QuestionType: Decodable {
@@ -104,6 +104,7 @@ struct TemplateDefinition: Decodable {
     }
     let version: Int
     let questions: [String: Question]
+    let ignore: [String]
 
     init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -112,11 +113,13 @@ struct TemplateDefinition: Decodable {
             throw HBError("The metadata.json file expects a later version of hb. Upgrade hb to use this template.")
         }
         self.questions = try container.decode([String: Question].self, forKey: .questions)
+        self.ignore = try container.decodeIfPresent([String].self, forKey: .ignore) ?? ["metadata.json"]
     }
 
     private enum CodingKeys: String, CodingKey {
         case version
         case questions
+        case ignore
     }
 
     func constructContext(_ context: inout [String: String]) throws {
