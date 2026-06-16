@@ -10,7 +10,7 @@ let package = Package(
         .executable(name: "hb", targets: ["hb"])
     ],
     dependencies: [
-        .package(url: "https://github.com/adam-fowler/swift-zip-archive.git", from: "0.8.0"),
+        .package(url: "https://github.com/adam-fowler/swift-zip-archive.git", from: "0.8.1"),
         .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.6.1"),
         .package(url: "https://github.com/apple/swift-async-algorithms.git", from: "1.0.0"),
         .package(url: "https://github.com/apple/swift-nio.git", from: "2.100.0"),
