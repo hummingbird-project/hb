@@ -9,6 +9,8 @@
 import ArgumentParser
 import AsyncAlgorithms
 import FileMonitor
+import Logging
+import ServiceLifecycle
 import Subprocess
 import Synchronization
 
@@ -41,6 +43,18 @@ struct WatchCommand: AsyncParsableCommand {
         parsing: .captureForPassthrough,
         help: "The arguments to pass to the executable."
     )
+    var arguments: [String] = []
+
+    func run() async throws {
+        let watchService = WatchService(useSwiftly: self.useSwiftly, product: self.product, arguments: self.arguments)
+        let serviceGroup = ServiceGroup(services: [watchService], cancellationSignals: [.sigint, .sigterm], logger: Logger(label: "Watch"))
+        try await serviceGroup.run()
+    }
+}
+
+struct WatchService: Service {
+    var useSwiftly: Bool = false
+    var product: String? = nil
     var arguments: [String] = []
 
     var swiftPM: SwiftPM { .init(useSwiftly: self.useSwiftly) }
@@ -89,7 +103,6 @@ struct WatchCommand: AsyncParsableCommand {
                     )
                 }
             }
-
             group.cancelAll()
         }
     }
