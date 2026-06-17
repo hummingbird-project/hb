@@ -30,11 +30,19 @@ struct InitCommand: AsyncParsableCommand {
     @Argument(help: "Target folder (defaults to current folder)", completion: .directory)
     var targetFolder: String?
 
-    @Flag(help: "Use default setup.")
+    @Flag(help: "Use default values instead of asking questions.")
     var `default`: Bool = false
 
-    @Option(help: "Path to custom template folder or git repository.")
+    @Option(name: [.customShort("t"), .long], help: "Path to custom template folder or git repository.")
     var template: String = "https://github.com/hummingbird-project/template"
+
+    @Option(
+        name: [.customShort("s"), .customLong("set")],
+        help: """
+            Set context variable. This is formatted as \"--set variable=value\". You can use "--set" multiple times to set multiple context variables. If used all other context variables are set to their default value.
+            """
+    )
+    var contextDefaults: [String] = []
 
     func run() async throws {
         let startFolder = FilePath(FileManager.default.currentDirectoryPath)
@@ -64,10 +72,23 @@ struct InitCommand: AsyncParsableCommand {
             }
         }
 
-        let context = [
+        var context = [
             "hbPackageName": currentFolderName,
             "hbExecutableName": "App",
         ]
+        var useDefaults: Bool = self.default
+        if !self.contextDefaults.isEmpty {
+            useDefaults = true
+            for value in self.contextDefaults {
+                let elements = value.split(separator: "=", maxSplits: 1)
+                if elements.count == 1 {
+                    context[.init(elements[0])] = "1"
+                } else if elements.count == 2 {
+                    context[.init(elements[0])] = .init(elements[1])
+                }
+            }
+        }
+
         if template.hasPrefix("http://") || template.hasPrefix("https://") || template.hasPrefix("git@") {
             // Get the latest version number of the template
             let templateVersion = try await getLatestTemplateVersion()
@@ -79,7 +100,8 @@ struct InitCommand: AsyncParsableCommand {
 
             try generateProject(
                 zipReader: zipReader,
-                context: context
+                context: context,
+                useDefaults: useDefaults
             )
         } else {
             var filePath = FilePath(self.template)
@@ -94,7 +116,8 @@ struct InitCommand: AsyncParsableCommand {
 
             try generateProject(
                 zipReader: zipReader,
-                context: context
+                context: context,
+                useDefaults: useDefaults
             )
         }
     }
@@ -153,7 +176,8 @@ struct InitCommand: AsyncParsableCommand {
 
     func generateProject(
         zipReader: ZipArchiveReader<some ZipReadableStorage>,
-        context: [String: String]
+        context: [String: String],
+        useDefaults: Bool
     ) throws {
         var context = context
         let directory = try zipReader.readDirectory()
@@ -165,7 +189,7 @@ struct InitCommand: AsyncParsableCommand {
         let metadataJson = try zipReader.readFile(metadataJsonEntry)
         let templateDefinition = try JSONDecoder().decode(TemplateDefinition.self, from: Data(metadataJson))
         // construct context from template definition
-        if !self.default {
+        if !useDefaults {
             try templateDefinition.constructContext(&context)
         }
 
