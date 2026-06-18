@@ -6,7 +6,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 
-struct HBError: Error, CustomStringConvertible {
+struct HBError: Error, CustomStringConvertible, Equatable {
     let message: String
 
     init(_ message: String) {

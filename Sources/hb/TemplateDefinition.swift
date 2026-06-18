@@ -10,10 +10,10 @@ import Noora
 
 /// Define questions and parameters for template
 struct TemplateDefinition: Decodable {
-    static let currentVersion: Int = 2
+    static let currentVersion: Int = 3
 
-    struct Question: Decodable {
-        enum QuestionType: Decodable {
+    struct Question: Decodable, Equatable {
+        enum QuestionType: Decodable, Equatable {
             enum ValidationRule: String, Decodable {
                 case nonEmpty
                 case noWhitespace
@@ -27,14 +27,28 @@ struct TemplateDefinition: Decodable {
                     }
                 }
             }
-            struct Text: Decodable {
+            struct Text: Decodable, Equatable {
                 let prompt: String
                 let description: String?
                 let validationRules: [ValidationRule]
                 let contextKey: String
                 let next: String?
+
+                init(
+                    prompt: String,
+                    description: String? = nil,
+                    validationRules: [ValidationRule],
+                    contextKey: String,
+                    next: String? = nil
+                ) {
+                    self.prompt = prompt
+                    self.description = description
+                    self.validationRules = validationRules
+                    self.contextKey = contextKey
+                    self.next = next
+                }
             }
-            struct Branch: Decodable {
+            struct Branch: Decodable, Equatable {
                 struct Option: Decodable, CustomStringConvertible, Equatable {
                     let name: String
                     let displayName: String?
@@ -42,31 +56,68 @@ struct TemplateDefinition: Decodable {
                     let next: String?
 
                     var description: String { self.displayName ?? self.name }
+
+                    internal init(name: String, displayName: String? = nil, contextKey: String? = nil, next: String? = nil) {
+                        self.name = name
+                        self.displayName = displayName
+                        self.contextKey = contextKey
+                        self.next = next
+                    }
                 }
                 let description: String?
                 let options: [Option]
+
+                init(description: String? = nil, options: [Option]) {
+                    self.description = description
+                    self.options = options
+                }
             }
-            struct SingleChoice: Decodable {
+            struct SingleChoice: Decodable, Equatable {
                 struct Option: Decodable, CustomStringConvertible, Equatable {
                     let name: String
                     let displayName: String?
-
                     var description: String { self.displayName ?? self.name }
+
+                    init(name: String, displayName: String? = nil) {
+                        self.name = name
+                        self.displayName = displayName
+                    }
                 }
                 let description: String?
                 let contextKey: String
                 let options: [Option]
                 let next: String?
+
+                init(
+                    description: String? = nil,
+                    contextKey: String,
+                    options: [Option],
+                    next: String? = nil
+                ) {
+                    self.description = description
+                    self.contextKey = contextKey
+                    self.options = options
+                    self.next = next
+                }
             }
-            struct MultipleChoice: Decodable {
+            struct MultipleChoice: Decodable, Equatable {
                 struct Option: Decodable, CustomStringConvertible, Equatable {
                     let name: String
                     let contextKey: String
-
                     var description: String { self.name }
+
+                    init(name: String, contextKey: String) {
+                        self.name = name
+                        self.contextKey = contextKey
+                    }
                 }
                 let options: [Option]
                 let next: String?
+
+                init(options: [Option], next: String? = nil) {
+                    self.options = options
+                    self.next = next
+                }
             }
             case text(Text)
             case branch(Branch)
@@ -102,6 +153,7 @@ struct TemplateDefinition: Decodable {
             case multipleChoice = "multi-select"
         }
     }
+
     let version: Int
     let questions: [String: Question]
     let ignore: [String]
@@ -119,6 +171,7 @@ struct TemplateDefinition: Decodable {
     private enum CodingKeys: String, CodingKey {
         case version
         case questions
+        case rules
         case ignore
     }
 
@@ -143,7 +196,7 @@ struct TemplateDefinition: Decodable {
                     description: options.description.map { "\($0)" }
                 )
                 if let contextKey = choice.contextKey {
-                    context[contextKey] = "yes"
+                    context[contextKey] = "1"
                 }
                 id = choice.next
             case .singleChoice(let singleChoice):
@@ -160,7 +213,7 @@ struct TemplateDefinition: Decodable {
                     options: multipleChoice.options,
                 )
                 for choice in choices {
-                    context[choice.contextKey] = "yes"
+                    context[choice.contextKey] = "1"
                 }
                 id = multipleChoice.next
             }

@@ -36,6 +36,7 @@ let package = Package(
                 .product(name: "Subprocess", package: "swift-subprocess"),
                 .product(name: "ZipArchive", package: "swift-zip-archive"),
             ]
-        )
+        ),
+        .testTarget(name: "hbTests", dependencies: ["hb"]),
     ]
 )
