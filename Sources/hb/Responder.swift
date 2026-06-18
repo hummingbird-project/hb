@@ -21,6 +21,11 @@ struct DictionaryResponder: Responder {
         switch question.type {
         case .text(let text):
             if let answer {
+                for rule in text.validationRules {
+                    guard rule.rule.validate(input: answer) else {
+                        throw HBError("Invalid answer to question: \(question.id)")
+                    }
+                }
                 context[text.contextKey] = answer
             }
             return text.next
