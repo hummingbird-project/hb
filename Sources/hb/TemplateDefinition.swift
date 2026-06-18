@@ -17,6 +17,67 @@ struct TemplateDefinition: Decodable {
     static let currentVersion: Int = 3
 
     struct Question: Decodable, Equatable {
+        enum ContextTransform: Decodable, Equatable {
+            case set(String)
+
+            init(from decoder: any Decoder) throws {
+                let container = try decoder.container(keyedBy: CodingKeys.self)
+                if container.contains(.set) {
+                    self = .set(try container.decode(String.self, forKey: .set))
+                } else {
+                    throw DecodingError.typeMismatch(
+                        String.self,
+                        .init(codingPath: decoder.codingPath, debugDescription: "Failed to decode Rule enum.")
+                    )
+                }
+            }
+
+            func updateContext(_ context: inout [String: String], value: String) throws {
+                switch self {
+                case .set(let key):
+                    context[key] = value
+                }
+            }
+
+            private enum CodingKeys: String, CodingKey {
+                case set
+            }
+        }
+
+        struct ContextTransformGroup: Decodable, Equatable, ExpressibleByArrayLiteral {
+            let transforms: [ContextTransform]
+
+            init(transforms: [ContextTransform]) {
+                self.transforms = transforms
+            }
+
+            init(arrayLiteral elements: ContextTransform...) {
+                self.transforms = elements
+            }
+
+            init(from decoder: any Decoder) throws {
+                let container = try decoder.singleValueContainer()
+                if let transforms = try? container.decode([ContextTransform].self) {
+                    self.transforms = transforms
+                } else if let transform = try? container.decode(ContextTransform.self) {
+                    self.transforms = [transform]
+                } else if let key = try? container.decode(String.self) {
+                    self.transforms = [.set(key)]
+                } else {
+                    throw DecodingError.typeMismatch(
+                        ContextTransformGroup.self,
+                        .init(codingPath: decoder.codingPath, debugDescription: "Failed to decode ContextTransformGroup")
+                    )
+                }
+            }
+
+            func updateContext(_ context: inout [String: String], value: String) throws {
+                for transform in self.transforms {
+                    try transform.updateContext(&context, value: value)
+                }
+            }
+        }
+
         enum QuestionType: Decodable, Equatable {
             enum ValidationRule: String, Decodable {
                 case nonEmpty
@@ -35,20 +96,20 @@ struct TemplateDefinition: Decodable {
                 let prompt: String
                 let description: String?
                 let validationRules: [ValidationRule]
-                let contextKey: String
+                let context: ContextTransformGroup
                 let next: String?
 
                 init(
                     prompt: String,
                     description: String? = nil,
                     validationRules: [ValidationRule],
-                    contextKey: String,
+                    context: ContextTransformGroup,
                     next: String? = nil
                 ) {
                     self.prompt = prompt
                     self.description = description
                     self.validationRules = validationRules
-                    self.contextKey = contextKey
+                    self.context = context
                     self.next = next
                 }
             }
@@ -56,16 +117,32 @@ struct TemplateDefinition: Decodable {
                 struct Option: TemplateOption, Decodable, Equatable {
                     let name: String
                     let displayName: String?
-                    let contextKey: String?
+                    let context: ContextTransformGroup
                     let next: String?
 
                     var description: String { self.displayName ?? self.name }
 
-                    internal init(name: String, displayName: String? = nil, contextKey: String? = nil, next: String? = nil) {
+                    internal init(name: String, displayName: String? = nil, context: ContextTransformGroup = [], next: String? = nil) {
                         self.name = name
                         self.displayName = displayName
-                        self.contextKey = contextKey
+                        self.context = context
                         self.next = next
+                    }
+
+                    init(from decoder: any Decoder) throws {
+                        let container = try decoder.container(keyedBy: CodingKeys.self)
+
+                        self.name = try container.decode(String.self, forKey: .name)
+                        self.displayName = try container.decodeIfPresent(String.self, forKey: .displayName)
+                        self.context = try container.decodeIfPresent(ContextTransformGroup.self, forKey: .context) ?? []
+                        self.next = try container.decodeIfPresent(String.self, forKey: .next)
+                    }
+
+                    private enum CodingKeys: CodingKey {
+                        case name
+                        case displayName
+                        case context
+                        case next
                     }
                 }
                 let description: String?
@@ -88,18 +165,18 @@ struct TemplateDefinition: Decodable {
                     }
                 }
                 let description: String?
-                let contextKey: String
+                let context: ContextTransformGroup
                 let options: [Option]
                 let next: String?
 
                 init(
                     description: String? = nil,
-                    contextKey: String,
+                    context: ContextTransformGroup,
                     options: [Option],
                     next: String? = nil
                 ) {
                     self.description = description
-                    self.contextKey = contextKey
+                    self.context = context
                     self.options = options
                     self.next = next
                 }
@@ -108,13 +185,13 @@ struct TemplateDefinition: Decodable {
                 struct Option: TemplateOption, Decodable, Equatable {
                     let name: String
                     let displayName: String?
-                    let contextKey: String
+                    let context: ContextTransformGroup
                     var description: String { self.displayName ?? self.name }
 
-                    init(name: String, displayName: String? = nil, contextKey: String) {
+                    init(name: String, displayName: String? = nil, context: ContextTransformGroup) {
                         self.name = name
                         self.displayName = displayName
-                        self.contextKey = contextKey
+                        self.context = context
                     }
                 }
                 let options: [Option]
@@ -184,7 +261,7 @@ struct TemplateDefinition: Decodable {
         case ignore
     }
 
-    func constructContext(_ context: inout [String: String], responder: some Responder) throws {
+    func updateContext(_ context: inout [String: String], responder: some Responder) throws {
         var id: String? = self.questions.first?.id
         while let _id = id {
             guard let question = self.questions.first(where: { $0.id == _id }) else { throw HBError("Invalid metadata id: \(_id)") }

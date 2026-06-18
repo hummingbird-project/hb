@@ -30,7 +30,7 @@ struct TemplateDefinitionTests {
                         "text":{
                             "prompt": "Your name",
                             "validationRules": ["nonEmpty", "allASCII"],
-                            "contextKey": "name"
+                            "context": {"set": "name"}
                         }
                     }
                 ],
@@ -44,13 +44,13 @@ struct TemplateDefinitionTests {
                     .init(
                         prompt: "Your name",
                         validationRules: [.nonEmpty, .allASCII],
-                        contextKey: "name"
+                        context: [.set("name")]
                     )
                 )
         )
         let responder = DictionaryResponder(answers: ["name": "Adam"])
         var context: [String: String] = [:]
-        try templateDefinition.constructContext(&context, responder: responder)
+        try templateDefinition.updateContext(&context, responder: responder)
         #expect(context["name"] == "Adam")
     }
 
@@ -64,7 +64,7 @@ struct TemplateDefinitionTests {
                         "text":{
                             "prompt": "Your name",
                             "validationRules": ["allUppercase", "allASCII"],
-                            "contextKey": "name"
+                            "context": {"set": "name"}
                         }
                     }
                 ],
@@ -85,8 +85,8 @@ struct TemplateDefinitionTests {
                         "question":"What do you want to do?",
                         "branch":{
                             "options": [
-                                {"name":"tennis", "contextKey": "tennis", "next":"surface"},
-                                {"name":"football", "contextKey": "football"},
+                                {"name":"tennis", "context": [{"set": "tennis"}, {"set": "sport"}], "next":"surface"},
+                                {"name":"football", "context": [{"set": "football"}, {"set": "sport"}]},
                             ]
                         }
                     },
@@ -95,8 +95,8 @@ struct TemplateDefinitionTests {
                         "question":"What surface do you want to play on?",
                         "branch":{
                             "options": [
-                                {"name":"grass", "contextKey": "grass"},
-                                {"name":"clay", "contextKey": "clay"},
+                                {"name":"grass", "context": {"set": "grass"}},
+                                {"name":"clay", "context": {"set": "clay"}},
                             ]
                         }
                     }
@@ -110,15 +110,15 @@ struct TemplateDefinitionTests {
                 == .branch(
                     .init(
                         options: [
-                            .init(name: "tennis", contextKey: "tennis", next: "surface"),
-                            .init(name: "football", contextKey: "football"),
+                            .init(name: "tennis", context: [.set("tennis"), .set("sport")], next: "surface"),
+                            .init(name: "football", context: [.set("football"), .set("sport")]),
                         ]
                     )
                 )
         )
         let responder = DictionaryResponder(answers: ["activity": "tennis"])
         var context: [String: String] = [:]
-        try templateDefinition.constructContext(&context, responder: responder)
+        try templateDefinition.updateContext(&context, responder: responder)
         #expect(context["tennis"] == "1")
         #expect(context["grass"] == "1")
     }
@@ -135,7 +135,7 @@ struct TemplateDefinitionTests {
                                 {"name":"tennis", "displayName": "Tennis"},
                                 {"name":"football", "displayName": "Football"},
                             ],
-                            "contextKey": "sport"
+                            "context": {"set": "sport"}
                         }
                     }
                 ],
@@ -147,7 +147,7 @@ struct TemplateDefinitionTests {
             templateDefinition.questions.first?.type
                 == .singleChoice(
                     .init(
-                        contextKey: "sport",
+                        context: [.set("sport")],
                         options: [
                             .init(name: "tennis", displayName: "Tennis"),
                             .init(name: "football", displayName: "Football"),
@@ -157,7 +157,7 @@ struct TemplateDefinitionTests {
         )
         let responder = DictionaryResponder(answers: ["activity": "tennis"])
         var context: [String: String] = [:]
-        try templateDefinition.constructContext(&context, responder: responder)
+        try templateDefinition.updateContext(&context, responder: responder)
         #expect(context["sport"] == "tennis")
     }
 
@@ -170,9 +170,9 @@ struct TemplateDefinitionTests {
                         "question":"What do you want to do?",
                         "multi-select":{
                             "options": [
-                                {"name":"tennis", "contextKey": "Tennis"},
-                                {"name":"football", "contextKey": "Football"},
-                                {"name":"golf", "contextKey": "Golf"},
+                                {"name":"tennis", "context": {"set": "Tennis"}},
+                                {"name":"football", "context": {"set": "Football"}},
+                                {"name":"golf", "context": {"set": "Golf"}},
                             ]
                         }
                     }
@@ -186,16 +186,16 @@ struct TemplateDefinitionTests {
                 == .multipleChoice(
                     .init(
                         options: [
-                            .init(name: "tennis", contextKey: "Tennis"),
-                            .init(name: "football", contextKey: "Football"),
-                            .init(name: "golf", contextKey: "Golf"),
+                            .init(name: "tennis", context: [.set("Tennis")]),
+                            .init(name: "football", context: [.set("Football")]),
+                            .init(name: "golf", context: [.set("Golf")]),
                         ]
                     )
                 )
         )
         let responder = DictionaryResponder(answers: ["activity": "tennis,football"])
         var context: [String: String] = [:]
-        try templateDefinition.constructContext(&context, responder: responder)
+        try templateDefinition.updateContext(&context, responder: responder)
         #expect(context["Tennis"] == "1")
         #expect(context["Football"] == "1")
     }
