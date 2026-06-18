@@ -37,9 +37,9 @@ struct InitCommand: AsyncParsableCommand {
     var template: String = "https://github.com/hummingbird-project/template"
 
     @Option(
-        name: [.customShort("s"), .customLong("set")],
+        name: [.customShort("a"), .customLong("answer")],
         help: """
-            Set context variable. This is formatted as \"--set variable=value\". You can use "--set" multiple times to set multiple context variables. If used all other context variables are set to their default value.
+            Set answer for question. This is formatted as \"--answer <question id>=value\". You can use "--answer" multiple times to answer multiple questions. If used all other questions are set to default values.
             """
     )
     var contextDefaults: [String] = []
@@ -72,22 +72,28 @@ struct InitCommand: AsyncParsableCommand {
             }
         }
 
-        var context = [
+        let context = [
             "hbPackageName": currentFolderName,
             "hbExecutableName": "App",
         ]
-        var useDefaults: Bool = self.default
-        if !self.contextDefaults.isEmpty {
-            useDefaults = true
-            for value in self.contextDefaults {
-                let elements = value.split(separator: "=", maxSplits: 1)
-                if elements.count == 1 {
-                    context[.init(elements[0])] = "1"
-                } else if elements.count == 2 {
-                    context[.init(elements[0])] = .init(elements[1])
-                }
+        let answers: [String: String]? =
+            if !self.contextDefaults.isEmpty {
+                .init(
+                    self.contextDefaults.compactMap {
+                        let elements = $0.split(separator: "=", maxSplits: 1)
+                        if elements.count == 1 {
+                            return (String(elements[0]), "1")
+                        } else if elements.count == 2 {
+                            return (String(elements[0]), String(elements[1]))
+                        }
+                        return nil
+                    }
+                ) { first, _ in first }
+            } else if self.default {
+                [:]
+            } else {
+                nil
             }
-        }
 
         if template.hasPrefix("http://") || template.hasPrefix("https://") || template.hasPrefix("git@") {
             // Get the latest version number of the template
@@ -101,7 +107,7 @@ struct InitCommand: AsyncParsableCommand {
             try generateProject(
                 zipReader: zipReader,
                 context: context,
-                useDefaults: useDefaults
+                answers: answers
             )
         } else {
             var filePath = FilePath(self.template)
@@ -117,7 +123,7 @@ struct InitCommand: AsyncParsableCommand {
             try generateProject(
                 zipReader: zipReader,
                 context: context,
-                useDefaults: useDefaults
+                answers: answers
             )
         }
     }
@@ -177,7 +183,7 @@ struct InitCommand: AsyncParsableCommand {
     func generateProject(
         zipReader: ZipArchiveReader<some ZipReadableStorage>,
         context: [String: String],
-        useDefaults: Bool
+        answers: [String: String]?
     ) throws {
         var context = context
         let directory = try zipReader.readDirectory()
@@ -189,8 +195,10 @@ struct InitCommand: AsyncParsableCommand {
         let metadataJson = try zipReader.readFile(metadataJsonEntry)
         let templateDefinition = try JSONDecoder().decode(TemplateDefinition.self, from: Data(metadataJson))
         // construct context from template definition
-        if !useDefaults {
-            try templateDefinition.constructContext(&context)
+        if let answers {
+            try templateDefinition.constructContext(&context, responder: DictionaryResponder(answers: answers))
+        } else {
+            try templateDefinition.constructContext(&context, responder: NooraResponder())
         }
 
         let ignoreFiles = templateDefinition.ignore.map { FilePath($0) }

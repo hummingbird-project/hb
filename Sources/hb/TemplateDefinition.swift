@@ -8,6 +8,10 @@
 
 import Noora
 
+protocol TemplateOption: CustomStringConvertible, Equatable {
+    var name: String { get }
+}
+
 /// Define questions and parameters for template
 struct TemplateDefinition: Decodable {
     static let currentVersion: Int = 3
@@ -49,7 +53,7 @@ struct TemplateDefinition: Decodable {
                 }
             }
             struct Branch: Decodable, Equatable {
-                struct Option: Decodable, CustomStringConvertible, Equatable {
+                struct Option: TemplateOption, Decodable, Equatable {
                     let name: String
                     let displayName: String?
                     let contextKey: String?
@@ -73,7 +77,7 @@ struct TemplateDefinition: Decodable {
                 }
             }
             struct SingleChoice: Decodable, Equatable {
-                struct Option: Decodable, CustomStringConvertible, Equatable {
+                struct Option: TemplateOption, Decodable, Equatable {
                     let name: String
                     let displayName: String?
                     var description: String { self.displayName ?? self.name }
@@ -101,13 +105,15 @@ struct TemplateDefinition: Decodable {
                 }
             }
             struct MultipleChoice: Decodable, Equatable {
-                struct Option: Decodable, CustomStringConvertible, Equatable {
+                struct Option: TemplateOption, Decodable, Equatable {
                     let name: String
+                    let displayName: String?
                     let contextKey: String
-                    var description: String { self.name }
+                    var description: String { self.displayName ?? self.name }
 
-                    init(name: String, contextKey: String) {
+                    init(name: String, displayName: String? = nil, contextKey: String) {
                         self.name = name
+                        self.displayName = displayName
                         self.contextKey = contextKey
                     }
                 }
@@ -124,11 +130,13 @@ struct TemplateDefinition: Decodable {
             case singleChoice(SingleChoice)
             case multipleChoice(MultipleChoice)
         }
+        let id: String
         let question: String
         let type: QuestionType
 
         init(from decoder: any Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
+            self.id = try container.decode(String.self, forKey: .id)
             self.question = try container.decode(String.self, forKey: .question)
             if container.contains(.text) {
                 self.type = .text(try container.decode(QuestionType.Text.self, forKey: .text))
@@ -146,6 +154,7 @@ struct TemplateDefinition: Decodable {
             }
         }
         private enum CodingKeys: String, CodingKey {
+            case id
             case question
             case text
             case branch
@@ -155,7 +164,7 @@ struct TemplateDefinition: Decodable {
     }
 
     let version: Int
-    let questions: [String: Question]
+    let questions: [Question]
     let ignore: [String]
 
     init(from decoder: any Decoder) throws {
@@ -164,7 +173,7 @@ struct TemplateDefinition: Decodable {
         guard self.version <= Self.currentVersion else {
             throw HBError("The metadata.json file expects a later version of hb. Upgrade hb to use this template.")
         }
-        self.questions = try container.decode([String: Question].self, forKey: .questions)
+        self.questions = try container.decode([Question].self, forKey: .questions)
         self.ignore = try container.decodeIfPresent([String].self, forKey: .ignore) ?? ["metadata.json"]
     }
 
@@ -175,48 +184,11 @@ struct TemplateDefinition: Decodable {
         case ignore
     }
 
-    func constructContext(_ context: inout [String: String]) throws {
-        var id: String? = "start"
+    func constructContext(_ context: inout [String: String], responder: some Responder) throws {
+        var id: String? = self.questions.first?.id
         while let _id = id {
-            guard let question = self.questions[_id] else { throw HBError("Invalid metadata id: \(_id)") }
-            switch question.type {
-            case .text(let text):
-                let answer = Noora().textPrompt(
-                    title: "\(question.question)",
-                    prompt: "\(text.prompt)",
-                    description: text.description.map { "\($0)" },
-                    validationRules: text.validationRules.map(\.rule)
-                )
-                context[text.contextKey] = answer
-                id = text.next
-            case .branch(let options):
-                let choice = Noora().singleChoicePrompt(
-                    question: "\(question.question)",
-                    options: options.options,
-                    description: options.description.map { "\($0)" }
-                )
-                if let contextKey = choice.contextKey {
-                    context[contextKey] = "1"
-                }
-                id = choice.next
-            case .singleChoice(let singleChoice):
-                let choice = Noora().singleChoicePrompt(
-                    question: "\(question.question)",
-                    options: singleChoice.options,
-                    description: singleChoice.description.map { "\($0)" }
-                )
-                context[singleChoice.contextKey] = choice.name
-                id = singleChoice.next
-            case .multipleChoice(let multipleChoice):
-                let choices = Noora().multipleChoicePrompt(
-                    question: "\(question.question)",
-                    options: multipleChoice.options,
-                )
-                for choice in choices {
-                    context[choice.contextKey] = "1"
-                }
-                id = multipleChoice.next
-            }
+            guard let question = self.questions.first(where: { $0.id == _id }) else { throw HBError("Invalid metadata id: \(_id)") }
+            id = try responder.updateContext(&context, question: question)
         }
     }
 }
