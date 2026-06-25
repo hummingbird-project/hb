@@ -30,11 +30,19 @@ struct InitCommand: AsyncParsableCommand {
     @Argument(help: "Target folder (defaults to current folder)", completion: .directory)
     var targetFolder: String?
 
-    @Flag(help: "Use default setup.")
+    @Flag(help: "Use default values instead of asking questions.")
     var `default`: Bool = false
 
-    @Option(help: "Path to custom template folder or git repository.")
+    @Option(name: [.customShort("t"), .long], help: "Path to custom template folder or git repository.")
     var template: String = "https://github.com/hummingbird-project/template"
+
+    @Option(
+        name: [.customShort("a"), .customLong("answer")],
+        help: """
+            Set answer for question. This is formatted as \"--answer <question id>=value\". You can use "--answer" multiple times to answer multiple questions. If used all other questions are set to default values.
+            """
+    )
+    var contextDefaults: [String] = []
 
     func run() async throws {
         let startFolder = FilePath(FileManager.default.currentDirectoryPath)
@@ -68,6 +76,25 @@ struct InitCommand: AsyncParsableCommand {
             "hbPackageName": currentFolderName,
             "hbExecutableName": "App",
         ]
+        let answers: [String: String]? =
+            if !self.contextDefaults.isEmpty {
+                .init(
+                    self.contextDefaults.compactMap {
+                        let elements = $0.split(separator: "=", maxSplits: 1)
+                        if elements.count == 1 {
+                            return (String(elements[0]), "1")
+                        } else if elements.count == 2 {
+                            return (String(elements[0]), String(elements[1]))
+                        }
+                        return nil
+                    }
+                ) { first, _ in first }
+            } else if self.default {
+                [:]
+            } else {
+                nil
+            }
+
         if template.hasPrefix("http://") || template.hasPrefix("https://") || template.hasPrefix("git@") {
             // Get the latest version number of the template
             let templateVersion = try await getLatestTemplateVersion()
@@ -79,7 +106,8 @@ struct InitCommand: AsyncParsableCommand {
 
             try generateProject(
                 zipReader: zipReader,
-                context: context
+                context: context,
+                answers: answers
             )
         } else {
             var filePath = FilePath(self.template)
@@ -94,7 +122,8 @@ struct InitCommand: AsyncParsableCommand {
 
             try generateProject(
                 zipReader: zipReader,
-                context: context
+                context: context,
+                answers: answers
             )
         }
     }
@@ -153,7 +182,8 @@ struct InitCommand: AsyncParsableCommand {
 
     func generateProject(
         zipReader: ZipArchiveReader<some ZipReadableStorage>,
-        context: [String: String]
+        context: [String: String],
+        answers: [String: String]?
     ) throws {
         var context = context
         let directory = try zipReader.readDirectory()
@@ -165,8 +195,10 @@ struct InitCommand: AsyncParsableCommand {
         let metadataJson = try zipReader.readFile(metadataJsonEntry)
         let templateDefinition = try JSONDecoder().decode(TemplateDefinition.self, from: Data(metadataJson))
         // construct context from template definition
-        if !self.default {
-            try templateDefinition.constructContext(&context)
+        if let answers {
+            try templateDefinition.constructContext(&context, responder: DictionaryResponder(answers: answers))
+        } else {
+            try templateDefinition.constructContext(&context, responder: NooraResponder())
         }
 
         let ignoreFiles = templateDefinition.ignore.map { FilePath($0) }

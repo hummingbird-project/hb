@@ -23,8 +23,9 @@ struct TemplateDefinitionTests {
     @Test func textQuestion() throws {
         let template = """
             {
-                "questions": {
-                    "start": {
+                "questions": [
+                    {
+                        "id": "name",
                         "question":"What is your name?",
                         "text":{
                             "prompt": "Your name",
@@ -32,13 +33,13 @@ struct TemplateDefinitionTests {
                             "contextKey": "name"
                         }
                     }
-                },
+                ],
                 "version": 2
             }
             """
         let templateDefinition = try JSONDecoder().decode(TemplateDefinition.self, from: Data(template.utf8))
         #expect(
-            templateDefinition.questions["start"]?.type
+            templateDefinition.questions.first?.type
                 == .text(
                     .init(
                         prompt: "Your name",
@@ -47,13 +48,18 @@ struct TemplateDefinitionTests {
                     )
                 )
         )
+        let responder = DictionaryResponder(answers: ["name": "Adam"])
+        var context: [String: String] = [:]
+        try templateDefinition.constructContext(&context, responder: responder)
+        #expect(context["name"] == "Adam")
     }
 
     @Test func invalidTextValidationRule() throws {
         let template = """
             {
-                "questions": {
-                    "start": {
+                "questions": [
+                    {
+                        "id": "name",
                         "question":"What is your name?",
                         "text":{
                             "prompt": "Your name",
@@ -61,8 +67,8 @@ struct TemplateDefinitionTests {
                             "contextKey": "name"
                         }
                     }
-                },
-                "version": 2
+                ],
+                "version": 3
             }
             """
         #expect(throws: DecodingError.self) {
@@ -73,100 +79,124 @@ struct TemplateDefinitionTests {
     @Test func branchQuestion() throws {
         let template = """
             {
-                "questions": {
-                    "start": {
+                "questions": [
+                    {
+                        "id": "activity",
                         "question":"What do you want to do?",
                         "branch":{
                             "options": [
-                                {"name":"tennis", "contextKey": "tennis", "next":"Tennis"},
+                                {"name":"tennis", "contextKey": "tennis", "next":"surface"},
                                 {"name":"football", "contextKey": "football"},
                             ]
                         }
+                    },
+                    {
+                        "id": "surface",
+                        "question":"What surface do you want to play on?",
+                        "branch":{
+                            "options": [
+                                {"name":"grass", "contextKey": "grass"},
+                                {"name":"clay", "contextKey": "clay"},
+                            ]
+                        }
                     }
-                },
-                "version": 2
+                ],
+                "version": 3
             }
             """
         let templateDefinition = try JSONDecoder().decode(TemplateDefinition.self, from: Data(template.utf8))
         #expect(
-            templateDefinition.questions["start"]?.type
+            templateDefinition.questions.first?.type
                 == .branch(
                     .init(
                         options: [
-                            .init(name: "tennis", contextKey: "tennis", next: "Tennis"),
+                            .init(name: "tennis", contextKey: "tennis", next: "surface"),
                             .init(name: "football", contextKey: "football"),
                         ]
                     )
                 )
         )
+        let responder = DictionaryResponder(answers: ["activity": "tennis"])
+        var context: [String: String] = [:]
+        try templateDefinition.constructContext(&context, responder: responder)
+        #expect(context["tennis"] == "1")
+        #expect(context["grass"] == "1")
     }
 
     @Test func singleChoiceQuestion() throws {
         let template = """
             {
-                "questions": {
-                    "start": {
+                "questions": [
+                    {
+                        "id": "activity",
                         "question":"What do you want to do?",
                         "select":{
                             "options": [
                                 {"name":"tennis", "displayName": "Tennis"},
                                 {"name":"football", "displayName": "Football"},
                             ],
-                            "contextKey": "sport",
-                            "next": "more"
+                            "contextKey": "sport"
                         }
                     }
-                },
-                "version": 2
+                ],
+                "version": 3
             }
             """
         let templateDefinition = try JSONDecoder().decode(TemplateDefinition.self, from: Data(template.utf8))
         #expect(
-            templateDefinition.questions["start"]?.type
+            templateDefinition.questions.first?.type
                 == .singleChoice(
                     .init(
                         contextKey: "sport",
                         options: [
                             .init(name: "tennis", displayName: "Tennis"),
                             .init(name: "football", displayName: "Football"),
-                        ],
-                        next: "more"
+                        ]
                     )
                 )
         )
-
+        let responder = DictionaryResponder(answers: ["activity": "tennis"])
+        var context: [String: String] = [:]
+        try templateDefinition.constructContext(&context, responder: responder)
+        #expect(context["sport"] == "tennis")
     }
 
     @Test func multipleChoiceQuestion() throws {
         let template = """
             {
-                "questions": {
-                    "start": {
+                "questions": [
+                    {
+                        "id": "activity",
                         "question":"What do you want to do?",
                         "multi-select":{
                             "options": [
                                 {"name":"tennis", "contextKey": "Tennis"},
                                 {"name":"football", "contextKey": "Football"},
-                            ],
-                            "next": "more"
+                                {"name":"golf", "contextKey": "Golf"},
+                            ]
                         }
                     }
-                },
-                "version": 2
+                ],
+                "version": 3
             }
             """
         let templateDefinition = try JSONDecoder().decode(TemplateDefinition.self, from: Data(template.utf8))
         #expect(
-            templateDefinition.questions["start"]?.type
+            templateDefinition.questions.first?.type
                 == .multipleChoice(
                     .init(
                         options: [
                             .init(name: "tennis", contextKey: "Tennis"),
                             .init(name: "football", contextKey: "Football"),
-                        ],
-                        next: "more"
+                            .init(name: "golf", contextKey: "Golf"),
+                        ]
                     )
                 )
         )
+        let responder = DictionaryResponder(answers: ["activity": "tennis,football"])
+        var context: [String: String] = [:]
+        try templateDefinition.constructContext(&context, responder: responder)
+        #expect(context["Tennis"] == "1")
+        #expect(context["Football"] == "1")
     }
 }
