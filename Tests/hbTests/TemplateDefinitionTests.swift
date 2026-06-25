@@ -222,7 +222,7 @@ struct TemplateDefinitionTests {
                         "multi-select":{
                             "options": [
                                 {"name":"swimming", "context": [{"set": "Swimming"}, {"append": {"key": "sports", "value": "SWIMMING"}}]},
-                                {"name":"cycling", "context": [{"set": "Cycling"}, {"append": {"key": "sports", "value": "CYCLING"}}]},
+                                {"name":"cycling", "context": [{"set": "Cycling"}, {"append": {"key": "sports", "value": {"type": "CYCLING", "class": "road"}}}]},
                             ]
                         }
                     },
@@ -234,6 +234,6 @@ struct TemplateDefinitionTests {
         let responder = DictionaryResponder(answers: ["activity": "tennis", "activity2": "cycling"])
         var context: Context = [:]
         try templateDefinition.updateContext(&context, responder: responder)
-        #expect(context["sports"] == .array(["TENNIS", "CYCLING"]))
+        #expect(context["sports"] == .array([.string("TENNIS"), .map(["type": .string("CYCLING"), "class": .string("road")])]))
     }
 }

@@ -20,7 +20,7 @@ struct TemplateDefinition: Decodable {
         enum ContextTransform: Decodable, Equatable {
             struct ArrayAppend: Decodable, Equatable {
                 let key: String
-                let value: String
+                let value: ContextValue
             }
             case set(String)
             case append(ArrayAppend)

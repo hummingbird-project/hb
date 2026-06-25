@@ -30,9 +30,6 @@ struct InitCommand: AsyncParsableCommand {
     @Argument(help: "Target folder (defaults to current folder)", completion: .directory)
     var targetFolder: String?
 
-    @Flag(help: "Use default values instead of asking questions.")
-    var `default`: Bool = false
-
     @Option(name: [.customShort("t"), .long], help: "Path to custom template folder or git repository.")
     var template: String = "https://github.com/hummingbird-project/template"
 
@@ -61,7 +58,7 @@ struct InitCommand: AsyncParsableCommand {
             throw HBError("Could not get folder name")
         }
 
-        if try FileManager.default.contentsOfDirectory(atPath: currentFolder.string).count != 0 {
+        if try FileManager.default.contentsOfDirectory(atPath: currentFolder.string).count != 0, self.contextDefaults.isEmpty {
             guard
                 Noora().yesOrNoChoicePrompt(
                     question: "Your target folder is not empty. Do you want to continue?",
@@ -89,8 +86,6 @@ struct InitCommand: AsyncParsableCommand {
                         return nil
                     }
                 ) { first, _ in first }
-            } else if self.default {
-                [:]
             } else {
                 nil
             }
