@@ -15,7 +15,7 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-async-algorithms.git", from: "1.0.0"),
         .package(url: "https://github.com/apple/swift-nio.git", from: "2.100.0"),
         .package(url: "https://github.com/aus-der-Technik/FileMonitor.git", from: "1.2.0"),
-        .package(url: "https://github.com/hummingbird-project/swift-mustache.git", from: "2.0.0"),
+        .package(url: "https://github.com/hummingbird-project/swift-mustache.git", from: "2.1.0"),
         .package(url: "https://github.com/swiftlang/swift-subprocess.git", from: "0.5.0", traits: []),
         .package(url: "https://github.com/swift-server/async-http-client.git", from: "1.34.0"),
         .package(url: "https://github.com/swift-server/swift-service-lifecycle.git", from: "2.0.0"),
