@@ -196,9 +196,9 @@ struct InitCommand: AsyncParsableCommand {
         let templateDefinition = try JSONDecoder().decode(TemplateDefinition.self, from: Data(metadataJson))
         // construct context from template definition
         if let answers {
-            try templateDefinition.constructContext(&context, responder: DictionaryResponder(answers: answers))
+            try templateDefinition.updateContext(&context, responder: DictionaryResponder(answers: answers))
         } else {
-            try templateDefinition.constructContext(&context, responder: NooraResponder())
+            try templateDefinition.updateContext(&context, responder: NooraResponder())
         }
 
         let ignoreFiles = templateDefinition.ignore.map { FilePath($0) }

@@ -26,7 +26,7 @@ struct DictionaryResponder: Responder {
                         throw HBError("Invalid answer to question: \(question.id)")
                     }
                 }
-                context[text.contextKey] = answer
+                try text.context.updateContext(&context, value: answer)
             }
             return text.next
         case .branch(let branch):
@@ -40,9 +40,7 @@ struct DictionaryResponder: Responder {
             guard let choice else {
                 throw HBError("Invalid answer to question: \(question.id)")
             }
-            if let contextKey = choice.contextKey {
-                context[contextKey] = "1"
-            }
+            try choice.context.updateContext(&context, value: "1")
             return choice.next
         case .singleChoice(let singleChoice):
             let choice =
@@ -55,7 +53,7 @@ struct DictionaryResponder: Responder {
             guard let choice else {
                 throw HBError("Invalid answer to question: \(question.id)")
             }
-            context[singleChoice.contextKey] = choice.name
+            try singleChoice.context.updateContext(&context, value: choice.name)
             return singleChoice.next
         case .multipleChoice(let multipleChoice):
             if let answer {
@@ -67,7 +65,7 @@ struct DictionaryResponder: Responder {
                     return choice
                 }
                 for choice in choices {
-                    context[choice.contextKey] = "1"
+                    try choice.context.updateContext(&context, value: "1")
                 }
             }
             return multipleChoice.next
@@ -86,7 +84,7 @@ struct NooraResponder: Responder {
                 description: text.description.map { "\($0)" },
                 validationRules: text.validationRules.map(\.rule)
             )
-            context[text.contextKey] = answer
+            try text.context.updateContext(&context, value: answer)
             return text.next
         case .branch(let options):
             let choice = Noora().singleChoicePrompt(
@@ -94,9 +92,7 @@ struct NooraResponder: Responder {
                 options: options.options,
                 description: options.description.map { "\($0)" }
             )
-            if let contextKey = choice.contextKey {
-                context[contextKey] = "1"
-            }
+            try choice.context.updateContext(&context, value: "1")
             return choice.next
         case .singleChoice(let singleChoice):
             let choice = Noora().singleChoicePrompt(
@@ -104,7 +100,7 @@ struct NooraResponder: Responder {
                 options: singleChoice.options,
                 description: singleChoice.description.map { "\($0)" }
             )
-            context[singleChoice.contextKey] = choice.name
+            try singleChoice.context.updateContext(&context, value: choice.name)
             return singleChoice.next
         case .multipleChoice(let multipleChoice):
             let choices = Noora().multipleChoicePrompt(
@@ -112,7 +108,7 @@ struct NooraResponder: Responder {
                 options: multipleChoice.options,
             )
             for choice in choices {
-                context[choice.contextKey] = "1"
+                try choice.context.updateContext(&context, value: "1")
             }
             return multipleChoice.next
         }
