@@ -49,9 +49,9 @@ struct TemplateDefinitionTests {
                 )
         )
         let responder = DictionaryResponder(answers: ["name": "Adam"])
-        var context: [String: String] = [:]
+        var context: Context = .init()
         try templateDefinition.updateContext(&context, responder: responder)
-        #expect(context["name"] == "Adam")
+        #expect(context["name"] == .string("Adam"))
     }
 
     @Test func invalidTextValidationRule() throws {
@@ -117,10 +117,10 @@ struct TemplateDefinitionTests {
                 )
         )
         let responder = DictionaryResponder(answers: ["activity": "tennis"])
-        var context: [String: String] = [:]
+        var context: Context = [:]
         try templateDefinition.updateContext(&context, responder: responder)
-        #expect(context["tennis"] == "1")
-        #expect(context["grass"] == "1")
+        #expect(context["tennis"] == .string("1"))
+        #expect(context["grass"] == .string("1"))
     }
 
     @Test func singleChoiceQuestion() throws {
@@ -156,9 +156,9 @@ struct TemplateDefinitionTests {
                 )
         )
         let responder = DictionaryResponder(answers: ["activity": "tennis"])
-        var context: [String: String] = [:]
+        var context: Context = [:]
         try templateDefinition.updateContext(&context, responder: responder)
-        #expect(context["sport"] == "tennis")
+        #expect(context["sport"] == .string("tennis"))
     }
 
     @Test func multipleChoiceQuestion() throws {
@@ -194,9 +194,46 @@ struct TemplateDefinitionTests {
                 )
         )
         let responder = DictionaryResponder(answers: ["activity": "tennis,football"])
-        var context: [String: String] = [:]
+        var context: Context = [:]
         try templateDefinition.updateContext(&context, responder: responder)
-        #expect(context["Tennis"] == "1")
-        #expect(context["Football"] == "1")
+        #expect(context["Tennis"] == .string("1"))
+        #expect(context["Football"] == .string("1"))
+    }
+
+    @Test
+    func testAppendToVariable() throws {
+        let template = """
+            {
+                "questions": [
+                    {
+                        "id": "activity",
+                        "question":"What do you want to do?",
+                        "multi-select":{
+                            "options": [
+                                {"name":"tennis", "context": [{"set": "Tennis"}, {"append": {"key": "sports", "value": "TENNIS"}}]},
+                                {"name":"football", "context": [{"set": "Football"}, {"append": {"key": "sports", "value": "FOOTBALL"}}]},
+                            ],
+                            "next": "activity2"
+                        }
+                    },
+                    {
+                        "id": "activity2",
+                        "question":"And after?",
+                        "multi-select":{
+                            "options": [
+                                {"name":"swimming", "context": [{"set": "Swimming"}, {"append": {"key": "sports", "value": "SWIMMING"}}]},
+                                {"name":"cycling", "context": [{"set": "Cycling"}, {"append": {"key": "sports", "value": "CYCLING"}}]},
+                            ]
+                        }
+                    },
+                ],
+                "version": 3
+            }
+            """
+        let templateDefinition = try JSONDecoder().decode(TemplateDefinition.self, from: Data(template.utf8))
+        let responder = DictionaryResponder(answers: ["activity": "tennis", "activity2": "cycling"])
+        var context: Context = [:]
+        try templateDefinition.updateContext(&context, responder: responder)
+        #expect(context["sports"] == .array(["TENNIS", "CYCLING"]))
     }
 }

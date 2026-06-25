@@ -18,12 +18,19 @@ struct TemplateDefinition: Decodable {
 
     struct Question: Decodable, Equatable {
         enum ContextTransform: Decodable, Equatable {
+            struct ArrayAppend: Decodable, Equatable {
+                let key: String
+                let value: String
+            }
             case set(String)
+            case append(ArrayAppend)
 
             init(from decoder: any Decoder) throws {
                 let container = try decoder.container(keyedBy: CodingKeys.self)
                 if container.contains(.set) {
                     self = .set(try container.decode(String.self, forKey: .set))
+                } else if container.contains(.append) {
+                    self = .append(try container.decode(ArrayAppend.self, forKey: .append))
                 } else {
                     throw DecodingError.typeMismatch(
                         String.self,
@@ -32,15 +39,26 @@ struct TemplateDefinition: Decodable {
                 }
             }
 
-            func updateContext(_ context: inout [String: String], value: String) throws {
+            func updateContext(_ context: inout Context, value: String) throws {
                 switch self {
                 case .set(let key):
-                    context[key] = value
+                    context[key] = .string(value)
+                case .append(let append):
+                    switch context[append.key] {
+                    case .array(var values):
+                        values.append(append.value)
+                        context[append.key] = .array(values)
+                    case .none:
+                        context[append.key] = .array([append.value])
+                    default:
+                        throw HBError("Cannot append string to context value that is not an array.")
+                    }
                 }
             }
 
             private enum CodingKeys: String, CodingKey {
                 case set
+                case append
             }
         }
 
@@ -71,7 +89,7 @@ struct TemplateDefinition: Decodable {
                 }
             }
 
-            func updateContext(_ context: inout [String: String], value: String) throws {
+            func updateContext(_ context: inout Context, value: String) throws {
                 for transform in self.transforms {
                     try transform.updateContext(&context, value: value)
                 }
@@ -261,7 +279,7 @@ struct TemplateDefinition: Decodable {
         case ignore
     }
 
-    func updateContext(_ context: inout [String: String], responder: some Responder) throws {
+    func updateContext(_ context: inout Context, responder: some Responder) throws {
         var id: String? = self.questions.first?.id
         while let _id = id {
             guard let question = self.questions.first(where: { $0.id == _id }) else { throw HBError("Invalid metadata id: \(_id)") }

@@ -9,14 +9,14 @@ import Noora
 
 /// Protocol defining how we respond to the template definition questions
 protocol Responder {
-    func updateContext(_ context: inout [String: String], question: TemplateDefinition.Question) throws -> String?
+    func updateContext(_ context: inout Context, question: TemplateDefinition.Question) throws -> String?
 }
 
 /// Respond to template questions based on dictionary of question ids and answers
 struct DictionaryResponder: Responder {
     let answers: [String: String]
 
-    func updateContext(_ context: inout [String: String], question: TemplateDefinition.Question) throws -> String? {
+    func updateContext(_ context: inout Context, question: TemplateDefinition.Question) throws -> String? {
         let answer = answers[question.id]
         switch question.type {
         case .text(let text):
@@ -75,7 +75,7 @@ struct DictionaryResponder: Responder {
 
 /// Respond to template defintion questions using Noora
 struct NooraResponder: Responder {
-    func updateContext(_ context: inout [String: String], question: TemplateDefinition.Question) throws -> String? {
+    func updateContext(_ context: inout Context, question: TemplateDefinition.Question) throws -> String? {
         switch question.type {
         case .text(let text):
             let answer = Noora().textPrompt(

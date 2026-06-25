@@ -72,9 +72,9 @@ struct InitCommand: AsyncParsableCommand {
             }
         }
 
-        let context = [
-            "hbPackageName": currentFolderName,
-            "hbExecutableName": "App",
+        let context: Context = [
+            "hbPackageName": .string(currentFolderName),
+            "hbExecutableName": .string("App"),
         ]
         let answers: [String: String]? =
             if !self.contextDefaults.isEmpty {
@@ -182,7 +182,7 @@ struct InitCommand: AsyncParsableCommand {
 
     func generateProject(
         zipReader: ZipArchiveReader<some ZipReadableStorage>,
-        context: [String: String],
+        context: Context,
         answers: [String: String]?
     ) throws {
         var context = context
