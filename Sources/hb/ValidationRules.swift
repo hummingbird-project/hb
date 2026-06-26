@@ -23,3 +23,12 @@ struct AsciiValidationRule: ValidatableRule {
         !input.contains(where: { !$0.isASCII })
     }
 }
+
+struct SwiftTargetValidationRule: ValidatableRule {
+    static let characters = Set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_")
+    let error: any ValidatableError
+
+    func validate(input: String) -> Bool {
+        !input.contains(where: { !Self.characters.contains($0) })
+    }
+}

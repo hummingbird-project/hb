@@ -101,12 +101,14 @@ struct TemplateDefinition: Decodable {
                 case nonEmpty
                 case noWhitespace
                 case allASCII
+                case swiftTarget
 
                 var rule: ValidatableRule {
                     switch self {
                     case .nonEmpty: NonEmptyValidationRule(error: "String cannot be empty.")
                     case .noWhitespace: NoWhitespaceValidationRule(error: "String cannot contain whitespace")
                     case .allASCII: AsciiValidationRule(error: "String cannot contain non-ASCII values.")
+                    case .swiftTarget: SwiftTargetValidationRule(error: "String is not a valid Swift target name.")
                     }
                 }
             }
