@@ -38,6 +38,9 @@ struct WatchCommand: AsyncParsableCommand {
     @Argument(help: "The executable to build and run.")
     var product: String? = nil
 
+    @Flag(name: [.customShort("b"), .long], help: "Only build the executable.")
+    var buildOnly: Bool = false
+
     // The arguments to pass to the executable.
     @Argument(
         parsing: .captureForPassthrough,
@@ -46,16 +49,17 @@ struct WatchCommand: AsyncParsableCommand {
     var arguments: [String] = []
 
     func run() async throws {
-        let watchService = WatchService(useSwiftly: self.useSwiftly, product: self.product, arguments: self.arguments)
+        let watchService = WatchService(useSwiftly: self.useSwiftly, product: self.product, arguments: self.arguments, buildOnly: self.buildOnly)
         let serviceGroup = ServiceGroup(services: [watchService], cancellationSignals: [.sigint, .sigterm], logger: Logger(label: "Watch"))
         try await serviceGroup.run()
     }
 }
 
 struct WatchService: Service {
-    var useSwiftly: Bool = false
-    var product: String? = nil
-    var arguments: [String] = []
+    let useSwiftly: Bool
+    let product: String?
+    let arguments: [String]
+    let buildOnly: Bool
 
     var swiftPM: SwiftPM { .init(useSwiftly: self.useSwiftly) }
 
@@ -163,7 +167,7 @@ struct WatchService: Service {
         default:
             return
         }
-        if Task.isCancelled {
+        if self.buildOnly || Task.isCancelled {
             return
         }
         do {
