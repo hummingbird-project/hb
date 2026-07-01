@@ -35,11 +35,20 @@ struct WatchCommand: AsyncParsableCommand {
     @Flag(name: [.customShort("s"), .long], help: "Use swiftly to run swift processes")
     var useSwiftly: Bool = false
 
-    @Argument(help: "The executable to build and run.")
-    var product: String? = nil
-
     @Flag(name: [.customShort("b"), .long], help: "Only build the executable.")
     var buildOnly: Bool = false
+
+    @Flag(name: [.long], help: "Build tests as well as the executable.")
+    var buildTests: Bool = false
+
+    @Option(
+        name: [.customShort("w"), .long],
+        help: "Folders to watch. This defaults to \"Sources\", or \"Sources\" and \"Tests\" if the --build-tests option is enabled."
+    )
+    var watch: [String] = []
+
+    @Argument(help: "The executable to build and run.")
+    var product: String? = nil
 
     // The arguments to pass to the executable.
     @Argument(
@@ -49,33 +58,66 @@ struct WatchCommand: AsyncParsableCommand {
     var arguments: [String] = []
 
     func run() async throws {
-        let watchService = WatchService(useSwiftly: self.useSwiftly, product: self.product, arguments: self.arguments, buildOnly: self.buildOnly)
+        let watchService = WatchService(self)
         let serviceGroup = ServiceGroup(services: [watchService], cancellationSignals: [.sigint, .sigterm], logger: Logger(label: "Watch"))
         try await serviceGroup.run()
     }
 }
 
 struct WatchService: Service {
+    let watchFolders: [String]
     let useSwiftly: Bool
     let product: String?
     let arguments: [String]
     let buildOnly: Bool
+    let buildTests: Bool
 
     var swiftPM: SwiftPM { .init(useSwiftly: self.useSwiftly) }
 
+    init(_ command: WatchCommand) {
+        self.useSwiftly = command.useSwiftly
+        self.product = command.product
+        self.arguments = command.arguments
+        self.buildOnly = command.buildOnly
+        self.buildTests = command.buildTests
+        if command.watch.count == 0 {
+            self.watchFolders = self.buildTests ? ["Sources", "Tests"] : ["Sources"]
+        } else {
+            self.watchFolders = command.watch
+        }
+    }
+
     func run() async throws {
+        let currentDirectory = FileManager.default.currentDirectoryPath
+        let fileMonitors = try self.watchFolders.map {
+            let sourceDirectory = URL(filePath: currentDirectory, directoryHint: .isDirectory)
+                .appending(path: $0, directoryHint: .isDirectory)
+            return try FileMonitor(directory: sourceDirectory)
+        }
+        for monitor in fileMonitors {
+            try monitor.start()
+        }
+        defer {
+            for monitor in fileMonitors {
+                monitor.stop()
+            }
+        }
+        switch fileMonitors.count {
+        case 1:
+            try await run(fileMonitors[0].stream)
+        case 2:
+            try await run(merge(fileMonitors[0].stream, fileMonitors[1].stream))
+        case 3:
+            try await run(merge(fileMonitors[0].stream, fileMonitors[1].stream, fileMonitors[2].stream))
+        default:
+            throw HBError("hb only supports watching up to 3 folders.")
+        }
+    }
+
+    func run(_ fileEvents: some AsyncSequence<FileChange, Never>) async throws {
         let targetProduct = try await self.swiftPM.getExecutableProduct(desiredProduct: self.product)
         let build = self.swiftPM.getCommand(["build", "--product", targetProduct])
         let run = try await SubprocessCommand(.path(self.swiftPM.getBinaryPath(product: targetProduct)), arguments: .init(arguments))
-
-        let currentDirectory = FileManager.default.currentDirectoryPath
-        let sourceDirectory = URL(filePath: currentDirectory, directoryHint: .isDirectory)
-            .appending(path: "Sources", directoryHint: .isDirectory)
-        let fileMonitor = try FileMonitor(directory: sourceDirectory)
-        try fileMonitor.start()
-        defer {
-            fileMonitor.stop()
-        }
 
         await withTaskGroup { group in
             // Initial build and run
@@ -84,7 +126,7 @@ struct WatchService: Service {
                 run: run,
                 group: &group
             )
-            let throttledStream = fileMonitor.stream._throttle(for: .seconds(1)) { (result: Bool?, event: FileChange) in
+            let throttledStream = fileEvents._throttle(for: .seconds(1)) { (result: Bool?, event: FileChange) in
                 switch event {
                 case .changed(let file):
                     print("File changed \(file)")
@@ -109,6 +151,7 @@ struct WatchService: Service {
             }
             group.cancelAll()
         }
+
     }
 
     /// Build target and once that has finished run the target
@@ -186,3 +229,5 @@ struct WatchService: Service {
         }
     }
 }
+
+extension FileChange: @retroactive @unchecked Sendable {}
