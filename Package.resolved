@@ -1,5 +1,5 @@
 {
-  "originHash" : "c17eab0a6d4471372e33000897b9091cd1ef996e0f45d8052c81dee7bd29de2a",
+  "originHash" : "9fa9495b4c7ee9bbf8b0e4dedf9ad932eb8e450a86a9f9b308282d8ec05c5452",
   "pins" : [
     {
       "identity" : "async-http-client",
@@ -8,15 +8,6 @@
       "state" : {
         "revision" : "7744c2a035c68ec14726c709f031835e3e30bde1",
         "version" : "1.34.0"
-      }
-    },
-    {
-      "identity" : "filemonitor",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/aus-der-Technik/FileMonitor",
-      "state" : {
-        "revision" : "5adbe8f2383eac5148475ef84977806bbd33e8d7",
-        "version" : "1.2.1"
       }
     },
     {
@@ -134,6 +125,15 @@
       "state" : {
         "revision" : "dc4030184203ffafbb2ec614352487235d747fe0",
         "version" : "1.4.1"
+      }
+    },
+    {
+      "identity" : "swift-file-watcher",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/adam-fowler/swift-file-watcher.git",
+      "state" : {
+        "revision" : "18a47f5a39ef97ca979de1a09852390cb6099eae",
+        "version" : "0.2.1"
       }
     },
     {

@@ -8,11 +8,12 @@
 
 import ArgumentParser
 import AsyncAlgorithms
-import FileMonitor
+import FileWatching
 import Logging
 import ServiceLifecycle
 import Subprocess
 import Synchronization
+import SystemPackage
 
 #if canImport(System)
 import System
@@ -88,33 +89,13 @@ struct WatchService: Service {
     }
 
     func run() async throws {
-        let currentDirectory = FileManager.default.currentDirectoryPath
-        let fileMonitors = try self.watchFolders.map {
-            let sourceDirectory = URL(filePath: currentDirectory, directoryHint: .isDirectory)
-                .appending(path: $0, directoryHint: .isDirectory)
-            return try FileMonitor(directory: sourceDirectory)
-        }
-        for monitor in fileMonitors {
-            try monitor.start()
-        }
-        defer {
-            for monitor in fileMonitors {
-                monitor.stop()
-            }
-        }
-        switch fileMonitors.count {
-        case 1:
-            try await run(fileMonitors[0].stream)
-        case 2:
-            try await run(merge(fileMonitors[0].stream, fileMonitors[1].stream))
-        case 3:
-            try await run(merge(fileMonitors[0].stream, fileMonitors[1].stream, fileMonitors[2].stream))
-        default:
-            throw HBError("hb only supports watching up to 3 folders.")
+        let fileWatcher = FileWatcher(paths: self.watchFolders.map { FilePath($0) })
+        try await fileWatcher.watch { events in
+            try await run(events)
         }
     }
 
-    func run(_ fileEvents: some AsyncSequence<FileChange, Never>) async throws {
+    func run(_ fileEvents: AsyncStream<FileWatcher.Event>) async throws {
         let targetProduct = try await self.swiftPM.getExecutableProduct(desiredProduct: self.product)
         let build = self.swiftPM.getCommand(["build", "--product", targetProduct])
         let run = try await SubprocessCommand(.path(self.swiftPM.getBinaryPath(product: targetProduct)), arguments: .init(arguments))
@@ -126,9 +107,9 @@ struct WatchService: Service {
                 run: run,
                 group: &group
             )
-            let throttledStream = fileEvents._throttle(for: .seconds(1)) { (result: Bool?, event: FileChange) in
+            let throttledStream = fileEvents._throttle(for: .seconds(1)) { (result: Bool?, event: FileWatcher.Event) in
                 switch event {
-                case .changed(let file):
+                case .modified(let file):
                     print("File changed \(file)")
                     return true
                 default:
@@ -229,5 +210,3 @@ struct WatchService: Service {
         }
     }
 }
-
-extension FileChange: @retroactive @unchecked Sendable {}
