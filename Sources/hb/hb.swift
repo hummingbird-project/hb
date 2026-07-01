@@ -13,7 +13,7 @@ import Foundation
 struct HB: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         abstract: "HB is for creating and managing hummingbird applications.",
-        version: "0.4.0",
+        version: "0.5.0",
         subcommands: [
             InitCommand.self,
             WatchCommand.self,
