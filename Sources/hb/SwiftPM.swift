@@ -38,7 +38,7 @@ struct SwiftPM {
             arguments: command.arguments,
             output: .string(limit: 1_000_000)
         )
-        guard var standardOutput = output.standardOutput?[...] else { throw HBError("Failed to get binary path") }
+        var standardOutput = output.standardOutput[...]
         while standardOutput.last?.isNewline == true {
             standardOutput = standardOutput.dropLast()
         }
@@ -82,7 +82,7 @@ struct SwiftPM {
             arguments: command.arguments,
             output: .string(limit: 1_000_000)
         )
-        guard let standardOutput = output.standardOutput?[...] else { throw HBError("Failed to get package description") }
+        let standardOutput = output.standardOutput[...]
         do {
             let swiftPackage = try JSONDecoder().decode(Package.self, from: Data(standardOutput.utf8))
             return swiftPackage.products.compactMap {

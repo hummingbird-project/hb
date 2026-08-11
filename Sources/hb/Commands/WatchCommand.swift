@@ -175,7 +175,7 @@ struct WatchService: Service {
                 build.executable,
                 arguments: build.arguments,
                 platformOptions: platformOptions,
-                input: .standardInput,
+                input: .currentStandardInput,
                 output: .currentStandardOutput,
                 error: .currentStandardError
             )
@@ -199,7 +199,7 @@ struct WatchService: Service {
                 run.executable,
                 arguments: run.arguments,
                 platformOptions: platformOptions,
-                input: .standardInput,
+                input: .currentStandardInput,
                 output: .currentStandardOutput,
                 error: .currentStandardError
             ) { execution in
