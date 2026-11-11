@@ -143,7 +143,7 @@ struct InitCommand: AsyncParsableCommand {
             }
             guard let version = versions.sorted().last else { throw HBError("Failed to get template version.") }
             return version
-        }.closureOutput
+        }.closureResult
     }
 
     func getTemplateZipArchive(

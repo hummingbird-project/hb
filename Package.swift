@@ -16,7 +16,7 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-nio.git", from: "2.100.0"),
         .package(url: "https://github.com/adam-fowler/swift-file-watcher.git", from: "0.2.1"),
         .package(url: "https://github.com/hummingbird-project/swift-mustache.git", from: "2.1.0"),
-        .package(url: "https://github.com/swiftlang/swift-subprocess.git", from: "0.5.0", traits: []),
+        .package(url: "https://github.com/swiftlang/swift-subprocess.git", from: "1.0.0", traits: []),
         .package(url: "https://github.com/swift-server/async-http-client.git", from: "1.34.0"),
         .package(url: "https://github.com/swift-server/swift-service-lifecycle.git", from: "2.0.0"),
         .package(url: "https://github.com/tuist/Noora.git", from: "0.56.0"),
